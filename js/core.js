@@ -202,6 +202,8 @@
    *
    * spec: { w, h, density (share of cells to fill), minLen, maxLen,
    *         bend (chance an arrow turns at each step), cover }
+   *
+   * This is the fallback; generate() first tries tile() and orient() below.
    */
   const PROPOSALS = 14;
   const MAX_MISSES = 6;
@@ -386,6 +388,278 @@
   }
 
   /*
+   * The main generator works in two steps.
+   *
+   * 1. Tile. Cover the board with paths: a share of cells is left empty
+   *    first (more on roomier boards), then each path starts in the most
+   *    hemmed-in empty cell and walks into the neighbor with the fewest
+   *    empty neighbors of its own, so nothing gets stranded. A lone cell
+   *    left over joins the end of a neighboring path, or stays empty.
+   *
+   * 2. Orient. Every path can point either way: one end is the head, the
+   *    other the tail. Since the cells never move, each arrow's blockers
+   *    depend only on its own direction, so each choice is worked out once.
+   *    A seeded hill climb then flips arrows one at a time, keeping changes
+   *    that don't make the board worse. It must stay clearable, and it
+   *    avoids the patterns that make a board read itself: convoys (an arrow
+   *    blocked by one heading the same way along the same line) and
+   *    side-by-side arrows heading the same way. On harder levels (`hard`
+   *    near 1) it also keeps few arrows free and makes the clear take many
+   *    waves with long lanes.
+   */
+  const HOLE = -2;
+
+  function tile(spec, rng) {
+    const { w, h } = spec;
+    const N = w * h;
+    const owner = new Int16Array(N).fill(-1);
+    const inside = (x, y) => x >= 0 && y >= 0 && x < w && y < h;
+    const straight = !spec.bend;
+    const holes = shuffle(Array.from({ length: N }, (_, c) => c), rng).slice(0, Math.round(N * (1 - spec.density)));
+    holes.forEach((c) => (owner[c] = HOLE));
+    const openAround = (c) => {
+      const x = c % w;
+      const y = (c - x) / w;
+      let n = 0;
+      for (let d = 0; d < 4; d++) {
+        const nx = x + DX[d];
+        const ny = y + DY[d];
+        if (inside(nx, ny) && owner[ny * w + nx] === -1) n++;
+      }
+      return n;
+    };
+    const paths = [];
+    for (;;) {
+      let start = -1;
+      let best = Infinity;
+      for (let c = 0; c < N; c++) {
+        if (owner[c] !== -1) continue;
+        const score = openAround(c) + rng() * 0.5;
+        if (score < best) {
+          best = score;
+          start = c;
+        }
+      }
+      if (start < 0) break;
+      const id = paths.length;
+      const path = [start];
+      owner[start] = id;
+      const len = spec.minLen + rng.int(spec.maxLen - spec.minLen + 1);
+      let dir = -1;
+      while (path.length < len) {
+        const c = path[path.length - 1];
+        const x = c % w;
+        const y = (c - x) / w;
+        let pick = null;
+        let pickScore = Infinity;
+        for (let d = 0; d < 4; d++) {
+          if (straight && dir >= 0 && d !== dir) continue;
+          const nx = x + DX[d];
+          const ny = y + DY[d];
+          if (!inside(nx, ny) || owner[ny * w + nx] !== -1) continue;
+          const nc = ny * w + nx;
+          let score = openAround(nc) + rng() * 1.2;
+          if (dir >= 0 && d !== dir) score += (1 - spec.bend) * 2.5 - spec.bend;
+          if (score < pickScore) {
+            pickScore = score;
+            pick = [nc, d];
+          }
+        }
+        if (!pick) break;
+        owner[pick[0]] = id;
+        path.push(pick[0]);
+        dir = pick[1];
+      }
+      paths.push(path);
+    }
+    // Lone cells join a neighboring path's end, in line with it if paths
+    // must stay straight; otherwise they stay empty.
+    paths.forEach((p, i) => {
+      if (p.length !== 1) return;
+      const c = p[0];
+      const x = c % w;
+      const y = (c - x) / w;
+      for (let d = 0; d < 4; d++) {
+        const nx = x + DX[d];
+        const ny = y + DY[d];
+        if (!inside(nx, ny)) continue;
+        const n = ny * w + nx;
+        const j = owner[n];
+        if (j < 0 || j === i || paths[j].length < 2 || paths[j].length >= spec.maxLen + STRETCH) continue;
+        const q = paths[j];
+        const atStart = q[0] === n;
+        const atEnd = q[q.length - 1] === n;
+        if (!atStart && !atEnd) continue;
+        if (straight) {
+          const next = atStart ? q[1] : q[q.length - 2];
+          if (next !== n + (n - c)) continue;
+        }
+        if (atStart) q.unshift(c);
+        else q.push(c);
+        owner[c] = j;
+        paths[i] = [];
+        return;
+      }
+      owner[c] = HOLE;
+      paths[i] = [];
+    });
+    return paths.filter((p) => p.length >= 2);
+  }
+
+  function orient(spec, paths, rng) {
+    const { w, h } = spec;
+    const N = w * h;
+    const n = paths.length;
+    const hard = Math.min(1, Math.max(0, spec.hard == null ? 0.5 : spec.hard));
+    const owner = new Int16Array(N).fill(-1);
+    paths.forEach((p, i) => p.forEach((c) => (owner[c] = i)));
+    // Both ways each path could point: its cells, head, direction, lane
+    // length, the arrows in its lane, and the first one it would hit.
+    const ways = paths.map((p, i) =>
+      [p, p.slice().reverse()].map((cells) => {
+        const head = cells[cells.length - 1];
+        const prev = cells[cells.length - 2];
+        const hx = head % w;
+        const hy = (head - hx) / w;
+        const d = dirBetween([prev % w, Math.floor(prev / w)], [hx, hy]);
+        const blk = new Set();
+        let first = -1;
+        let lane = 0;
+        for (let x = hx + DX[d], y = hy + DY[d]; x >= 0 && y >= 0 && x < w && y < h; x += DX[d], y += DY[d]) {
+          lane++;
+          const j = owner[y * w + x];
+          if (j === i) return null; // the lane runs into its own body
+          if (j >= 0) {
+            if (first < 0) first = j;
+            blk.add(j);
+          }
+        }
+        return { cells, head, hx, hy, d, lane, blk: Array.from(blk), first };
+      })
+    );
+    if (ways.some((v) => !v[0] && !v[1])) return null;
+    const pick = ways.map((v) => (v[0] && v[1] ? rng.int(2) : v[0] ? 0 : 1));
+    const alive = new Array(n).fill(true);
+
+    // Clears the board in waves. Returns the number of waves and the arrows
+    // left stuck in loops.
+    function waves() {
+      const indeg = new Int32Array(n);
+      const after = Array.from({ length: n }, () => []);
+      for (let i = 0; i < n; i++) {
+        if (!alive[i]) continue;
+        ways[i][pick[i]].blk.forEach((j) => {
+          if (!alive[j]) return;
+          indeg[i]++;
+          after[j].push(i);
+        });
+      }
+      let wave = [];
+      for (let i = 0; i < n; i++) if (alive[i] && !indeg[i]) wave.push(i);
+      let count = 0;
+      const done = new Array(n).fill(false);
+      while (wave.length) {
+        count++;
+        const next = [];
+        wave.forEach((j) => {
+          done[j] = true;
+          after[j].forEach((i) => --indeg[i] === 0 && next.push(i));
+        });
+        wave = next;
+      }
+      const stuck = [];
+      for (let i = 0; i < n; i++) if (alive[i] && !done[i]) stuck.push(i);
+      return { count, stuck };
+    }
+
+    function cost() {
+      let free = 0;
+      let laneSum = 0;
+      let live = 0;
+      let convoy = 0;
+      const heads = new Map();
+      for (let i = 0; i < n; i++) {
+        if (!alive[i]) continue;
+        const v = ways[i][pick[i]];
+        live++;
+        laneSum += v.lane;
+        heads.set(v.head, v.d);
+        const first = v.blk.length ? firstAlive(v) : -1;
+        if (first < 0) free++;
+        else {
+          const u = ways[first][pick[first]];
+          const sameLine = v.d % 2 === 0 ? u.hx === v.hx : u.hy === v.hy;
+          if (u.d === v.d && sameLine) convoy++;
+        }
+      }
+      // Side by side: a neighboring head pointing the same way.
+      let pairs = 0;
+      for (let i = 0; i < n; i++) {
+        if (!alive[i]) continue;
+        const v = ways[i][pick[i]];
+        const next = v.d % 2 === 0 ? (v.hx + 1 < w ? v.head + 1 : -1) : v.hy + 1 < h ? v.head + w : -1;
+        if (next >= 0 && heads.get(next) === v.d) pairs++;
+      }
+      const r = waves();
+      return r.stuck.length * 1000 + convoy * 4 + pairs * 3 + hard * (free * 6 - r.count * 1.5 - (laneSum / Math.max(1, live)) * 0.6);
+    }
+
+    // The first live arrow in an arrow's lane.
+    function firstAlive(v) {
+      if (alive[v.first]) return v.first;
+      for (let x = v.hx + DX[v.d], y = v.hy + DY[v.d]; x >= 0 && y >= 0 && x < w && y < h; x += DX[v.d], y += DY[v.d]) {
+        const j = owner[y * w + x];
+        if (j >= 0 && alive[j]) return j;
+      }
+      return -1;
+    }
+
+    const flippable = [];
+    for (let i = 0; i < n; i++) if (ways[i][0] && ways[i][1]) flippable.push(i);
+    const canFlip = new Set(flippable);
+
+    // Untangle first: flip arrows caught in loops, keeping any flip that
+    // doesn't leave more arrows stuck.
+    let stuck = waves().stuck;
+    for (let k = 0; k < n * 20 && stuck.length; k++) {
+      const options = stuck.filter((i) => canFlip.has(i));
+      if (!options.length) break;
+      const i = options[rng.int(options.length)];
+      pick[i] ^= 1;
+      const next = waves().stuck;
+      if (next.length <= stuck.length) stuck = next;
+      else pick[i] ^= 1;
+    }
+    // Last resort: take out a looped arrow and leave its cells empty.
+    // Removing an arrow only frees others, so this always ends.
+    while (stuck.length) {
+      alive[stuck[rng.int(stuck.length)]] = false;
+      stuck = waves().stuck;
+    }
+
+    // Then improve: flip arrows one at a time, keeping changes that don't
+    // make the board worse (and never bring a loop back).
+    let current = cost();
+    const steps = flippable.length ? Math.round(n * (12 + 28 * hard)) : 0;
+    for (let k = 0; k < steps; k++) {
+      const i = flippable[rng.int(flippable.length)];
+      if (!alive[i]) continue;
+      pick[i] ^= 1;
+      const next = cost();
+      if (next <= current) current = next;
+      else pick[i] ^= 1;
+    }
+    let filled = 0;
+    const arrows = [];
+    ways.forEach((v, i) => {
+      if (!alive[i]) return;
+      filled += v[pick[i]].cells.length;
+      arrows.push({ cells: v[pick[i]].cells.map((c) => [c % w, Math.floor(c / w)]) });
+    });
+    return { w, h, arrows, filled };
+  }
+
+  /*
    * Colors: touching arrows never share one, so every arrow reads clearly.
    * Placement order, with a seeded pick among the colors left.
    */
@@ -418,14 +692,17 @@
    * Everything is seeded and nothing depends on time, so the same spec gives
    * the same board on every device.
    */
-  const CANDIDATES = 6;
+  const CANDIDATES = 4;
 
   function generate(spec) {
     const seed = spec.seed == null ? 'unfold' : spec.seed;
     const found = [];
     for (let attempt = 0; attempt < CANDIDATES; attempt++) {
       const rng = makeRng(hashString(seed + ':' + attempt));
-      const board = build(spec, rng);
+      // Tile and orient. A path whose lane would run into its own body
+      // either way means falling back to building the board in reverse
+      // removal order, which always works.
+      const board = orient(spec, tile(spec, rng), rng) || build(spec, rng);
       if (board.arrows.length < 2) continue;
       const r = rate(board, seed);
       found.push(Object.assign(board, r, { attempt }));
@@ -538,6 +815,7 @@
       maxLen: row[4],
       bend: row[5],
       pick: row[6],
+      hard: row[6],
       cover: 0.4 + 1.6 * row[6],
       seed: 'level:' + level,
     };
@@ -578,6 +856,7 @@
       maxLen: len[1],
       bend: CUSTOM.bend[c.bend],
       pick: 0.6,
+      hard: 0.75,
       cover: 1.4,
       seed: 'custom:' + codeOf(Object.assign({}, c, { seed: 0 })) + ':' + c.seed,
     };
@@ -644,6 +923,8 @@
     isClearable,
     rate,
     build,
+    tile,
+    orient,
     colorArrows,
     generate,
     setOf,
