@@ -101,18 +101,77 @@
     tap() {
       tone(720, 0, 0.06, { type: 'triangle', gain: 0.15 });
     },
-    // A trace unzipping off the board: a run of tiny clicks, like zipper
-    // teeth parting, speeding up and rising in pitch. Longer traces unzip
-    // for longer.
-    unzip(length) {
-      const teeth = Math.max(7, Math.min(22, 5 + (length || 3) * 2));
-      const span = 0.16 + teeth * 0.012;
-      for (let k = 0; k < teeth; k++) {
-        const p = k / teeth;
-        const t = span * (1 - Math.pow(1 - p, 1.7)); // gaps shrink as it speeds up
-        noise(t, 0.012, { freq: 1800 + p * 4200 + Math.random() * 400, q: 6, gain: 0.32 });
+    /*
+     * A trace charging up as it runs to the core: a buzzing electric tone
+     * that climbs in pitch and opens up in brightness, with a thin
+     * high whine on top and sparks crackling more and more toward the end.
+     * It lasts as long as the trip; later traces start higher.
+     */
+    charge(seconds, progress) {
+      const ac = audio();
+      if (!ac) return;
+      const dur = Math.max(0.25, Math.min(2.5, seconds || 0.6));
+      const p = Math.max(0, Math.min(1, progress || 0));
+      const t0 = ac.currentTime;
+      const t1 = t0 + dur;
+      const low = 55 * Math.pow(2, p);
+      const high = low * 9;
+      // The body: a sawtooth and a square, a hair apart, through a sweeping
+      // resonant filter.
+      const filter = ac.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 8;
+      filter.frequency.setValueAtTime(380, t0);
+      filter.frequency.exponentialRampToValueAtTime(6500, t1);
+      // Mains-style hum: the level wobbles fast, quicker as it charges.
+      const hum = ac.createGain();
+      hum.gain.value = 0.65;
+      const lfo = ac.createOscillator();
+      const depth = ac.createGain();
+      lfo.frequency.setValueAtTime(40, t0);
+      lfo.frequency.exponentialRampToValueAtTime(110, t1);
+      depth.gain.value = 0.35;
+      lfo.connect(depth);
+      depth.connect(hum.gain);
+      const env = ac.createGain();
+      env.gain.setValueAtTime(0.0001, t0);
+      env.gain.exponentialRampToValueAtTime(0.13, t0 + 0.04);
+      env.gain.setValueAtTime(0.13, t1 - 0.06);
+      env.gain.exponentialRampToValueAtTime(0.2, t1 - 0.01);
+      env.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.05);
+      filter.connect(hum);
+      hum.connect(env);
+      env.connect(master);
+      [['sawtooth', 1], ['square', 2.006]].forEach(([type, mult]) => {
+        const o = ac.createOscillator();
+        o.type = type;
+        o.frequency.setValueAtTime(low * mult, t0);
+        o.frequency.exponentialRampToValueAtTime(high * mult, t1);
+        o.connect(filter);
+        o.start(t0);
+        o.stop(t1 + 0.08);
+      });
+      lfo.start(t0);
+      lfo.stop(t1 + 0.08);
+      // The whine of a charging capacitor.
+      tone(700 * Math.pow(2, p * 0.5), 0, dur, { to: 3600 * Math.pow(2, p * 0.5), gain: 0.035 });
+      // Sparks, sparse at first and thick at the end.
+      const pops = Math.round(dur * 26);
+      for (let k = 0; k < pops; k++) {
+        const at = dur * Math.sqrt(Math.random());
+        noise(at, 0.012 + Math.random() * 0.012, { freq: 2500 + Math.random() * 5000, q: 3, gain: 0.08 + 0.18 * (at / dur) });
       }
-      noise(0, span + 0.06, { type: 'highpass', freq: 2500, to: 6000, q: 0.7, gain: 0.03 });
+    },
+    // A charge landing in the core: a heavy thump, a crack of static, and
+    // a bright ping that rises as the core fills.
+    zap(progress) {
+      const p = Math.max(0, Math.min(1, progress || 0));
+      tone(170, 0, 0.22, { to: 42, gain: 0.42 });
+      tone(2600, 0, 0.11, { type: 'sawtooth', to: 260, gain: 0.06 });
+      noise(0, 0.09, { freq: 5200, q: 0.8, gain: 0.3 });
+      noise(0.02, 0.18, { type: 'highpass', freq: 3000, to: 9000, q: 0.5, gain: 0.05 });
+      const ping = 880 * Math.pow(2, p);
+      tone(ping, 0.03, 0.32, { type: 'triangle', to: ping * 1.06, gain: 0.07 });
     },
     // A short circuit: a crackle of sparks over a low electric buzz.
     short() {
@@ -120,19 +179,14 @@
       tone(85, 0, 0.22, { type: 'sawtooth', gain: 0.07, to: 70 });
       tone(170, 0, 0.18, { type: 'square', gain: 0.03, to: 130 });
     },
-    // A trace reaching the core: a soft charge-up, pitched higher as the
-    // board empties.
-    absorb(progress) {
-      const p = Math.max(0, Math.min(1, progress || 0));
-      const base = 220 * Math.pow(2, p * 1.5);
-      tone(base, 0, 0.22, { type: 'sine', to: base * 2, gain: 0.16 });
-      tone(base * 2, 0.04, 0.16, { type: 'triangle', to: base * 3, gain: 0.05 });
-      noise(0, 0.12, { freq: 900, to: 4000, q: 1.5, gain: 0.05 });
-    },
-    // The core filling up on the last trace.
+    // The core filling up on the last trace: the landing, then a surge
+    // that climbs and bursts.
     overload() {
-      tone(110, 0, 0.7, { type: 'sawtooth', to: 880, gain: 0.08 });
-      noise(0.05, 0.6, { freq: 600, to: 7000, q: 1, gain: 0.08 });
+      this.zap(1);
+      tone(90, 0.05, 0.75, { type: 'sawtooth', to: 1400, gain: 0.07 });
+      noise(0.05, 0.7, { freq: 500, to: 8000, q: 1.2, gain: 0.1 });
+      tone(160, 0.78, 0.5, { to: 38, gain: 0.45 });
+      noise(0.78, 0.4, { type: 'highpass', freq: 2000, to: 9000, q: 0.5, gain: 0.12 });
     },
     win() {
       [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.11, 0.35, { type: 'triangle', gain: 0.2 }));

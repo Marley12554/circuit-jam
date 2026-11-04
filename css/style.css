@@ -6,17 +6,17 @@
  * A single dark look by design: the game is a glowing circuit.
  */
 :root {
-  --bg: #061518;
-  --bg-2: #0a2228;
-  --grid: rgba(70, 230, 195, 0.055);
-  --panel: #0b2429;
-  --panel-solid: #0b2429;
-  --panel-2: #0f2f35;
-  --edge: rgba(47, 230, 180, 0.3);
-  --edge-soft: rgba(47, 230, 180, 0.14);
+  --bg: #0a1f24;
+  --bg-2: #133640;
+  --grid: rgba(80, 240, 200, 0.075);
+  --panel: #0f2d34;
+  --panel-solid: #0f2d34;
+  --panel-2: #163f48;
+  --edge: rgba(80, 240, 200, 0.38);
+  --edge-soft: rgba(80, 240, 200, 0.18);
   --ink: #e6fff9;
-  --ink-soft: #8fb8b0;
-  --ink-dim: #5d837c;
+  --ink-soft: #9cc6be;
+  --ink-dim: #648d86;
   --go: #2fe6b4;
   --go-hi: #6ff5d0;
   --on-go: #032019;
@@ -1102,7 +1102,7 @@ input:focus-visible {
 
 .tray {
   position: absolute;
-  background: #071a1e;
+  background: #0d2a31;
   box-shadow: inset 0 0 0 1.5px var(--edge-soft), 0 20px 40px -20px #000;
 }
 
@@ -1116,14 +1116,24 @@ input:focus-visible {
   pointer-events: none;
 }
 
-.cellgrid {
-  fill: none;
-  stroke: rgba(70, 230, 195, 0.07);
-  stroke-width: 0.02;
+.chip {
+  fill: #0a2227;
+  stroke: rgba(80, 240, 200, 0.4);
+  stroke-width: 0.04;
 }
 
-.via {
-  fill: rgba(70, 230, 195, 0.16);
+.tiles rect {
+  fill: #143a42;
+  stroke: rgba(80, 240, 200, 0.16);
+  stroke-width: 0.025;
+}
+
+/* Column and row labels, like the printing on a circuit board. */
+.silk text {
+  fill: rgba(156, 198, 190, 0.6);
+  font: 600 0.27px var(--font-display);
+  text-anchor: middle;
+  dominant-baseline: central;
 }
 
 .bus {
@@ -1229,6 +1239,56 @@ input:focus-visible {
   }
 }
 
+/* A charged trace: white-hot, with a bolt crackling along it and an
+   afterglow trailing behind it. */
+.arrow .trail,
+.arrow .trail2,
+.arrow .bolt {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.arrow .trail {
+  stroke: var(--c);
+  stroke-width: 0.5;
+  stroke-opacity: 0.3;
+}
+
+.arrow .trail2 {
+  stroke: color-mix(in srgb, var(--c) 70%, #ffffff);
+  stroke-width: 0.17;
+  stroke-opacity: 0.85;
+}
+
+.arrow .bolt {
+  stroke: #ffffff;
+  stroke-width: 0.07;
+  stroke-linejoin: bevel;
+}
+
+.arrow .bolt2 {
+  fill: none;
+  stroke: color-mix(in srgb, var(--c) 50%, #ffffff);
+  stroke-width: 0.04;
+  stroke-linejoin: bevel;
+}
+
+.arrow.energized .wire {
+  stroke: color-mix(in srgb, var(--c) 40%, #ffffff);
+  stroke-width: 0.15;
+}
+
+.arrow.energized .glow {
+  stroke-opacity: 0.5;
+  stroke-width: 0.6;
+}
+
+.arrow.energized .tip,
+.arrow.energized .pad {
+  stroke: #ffffff;
+}
+
 /* The trace that got hit flashes white. */
 .arrow.zapped .wire,
 .arrow.zapped .tip,
@@ -1257,17 +1317,31 @@ input:focus-visible {
 
 .core .meter-track {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.08);
-  stroke-width: 0.14;
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 0.22;
 }
 
 .core .meter {
   fill: none;
   stroke: var(--lab);
-  stroke-width: 0.14;
+  stroke-width: 0.22;
   stroke-linecap: butt;
-  transition: stroke-dashoffset 0.35s ease-out;
-  filter: drop-shadow(0 0 0.08px var(--lab));
+}
+
+.core .arc {
+  fill: none;
+  stroke-width: 0.07;
+  stroke-linejoin: bevel;
+}
+
+/* While a trace pours in, the core runs white-hot. */
+.core.feeding .shell {
+  stroke: #ffffff;
+}
+
+.core.feeding .heart {
+  opacity: 1 !important;
+  fill: #ffffff;
 }
 
 .core .heart {
@@ -1589,4 +1663,27 @@ input:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---------- Corner brackets ---------- */
+
+/* Panels carry small bracket marks on their square corners, like the
+   framing on an instrument display. */
+.hud,
+.lab,
+.custom-card,
+.win-card,
+.jump-form,
+.rules {
+  --brk: var(--go);
+  background-image: linear-gradient(var(--brk), var(--brk)), linear-gradient(var(--brk), var(--brk)),
+    linear-gradient(var(--brk), var(--brk)), linear-gradient(var(--brk), var(--brk));
+  background-size: 18px 2px, 2px 18px, 18px 2px, 2px 18px;
+  background-position: top right, top right, bottom left, bottom left;
+  background-repeat: no-repeat;
+}
+
+.lab,
+.hud {
+  --brk: var(--lab);
 }

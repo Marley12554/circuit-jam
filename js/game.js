@@ -438,6 +438,7 @@
     epoch: 0,
     busy: new Set(),
     absorbed: 0,
+    feeding: 0,
     cursor: null,
   };
 
@@ -544,6 +545,7 @@
     game.busy.clear();
     game.gone = new Array(game.puzzle.arrows.length).fill(false);
     game.absorbed = 0;
+    game.feeding = 0;
     game.bumps = 0;
     game.hintsLeft = Core.HINTS;
     game.helped = false;
@@ -629,78 +631,145 @@
   }
 
   const fmt = (n) => Math.round(n * 1000) / 1000;
+  const toPath = (line) => 'M' + line.map((q) => fmt(q[0]) + ' ' + fmt(q[1])).join('L');
+  const TRAIL = 4.5; // cells of afterglow behind a charged trace
+
+  // The points of the route between two distances along it.
+  function slice(track, a, b) {
+    const line = [pointAt(track, a)];
+    for (let k = 1; k < track.pts.length; k++) if (track.at[k] > a + 1e-6 && track.at[k] < b - 1e-6) line.push(track.pts[k]);
+    line.push(pointAt(track, b));
+    return line;
+  }
+
+  // The direction of travel at a distance along the route.
+  function dirAt(track, t) {
+    const k = segmentAt(track, Math.max(0, Math.min(track.total, t) - 1e-6));
+    const a = track.pts[k];
+    const b = track.pts[k + 1];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+  }
 
   // The trace's shape with its tail s cells along its route. Whatever has
   // passed the end of the route is inside the core and not drawn.
   function shapeAt(i, s) {
     const track = paths[i];
     if (s >= track.total) return null;
-    const start = s;
     const want = s + track.len - 1;
     const end = Math.min(want, track.total);
-    const line = [pointAt(track, start)];
-    for (let k = 1; k < track.pts.length; k++) if (track.at[k] > start + 1e-6 && track.at[k] < end - 1e-6) line.push(track.pts[k]);
-    const head = pointAt(track, end);
-    line.push(head);
-    const body = 'M' + line.map((q) => fmt(q[0]) + ' ' + fmt(q[1])).join('L');
+    const line = slice(track, s, end);
+    const head = line[line.length - 1];
     let tip = '';
     if (want < track.total - 0.25) {
-      const k = segmentAt(track, Math.max(0, end - 1e-6));
-      const a = track.pts[k];
-      const b = track.pts[k + 1];
-      const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-      const ux = (b[0] - a[0]) / L;
-      const uy = (b[1] - a[1]) / L;
+      const [ux, uy] = dirAt(track, end);
       const t = [head[0] + ux * 0.3, head[1] + uy * 0.3];
       const base = [t[0] - ux * 0.28, t[1] - uy * 0.28];
       tip = 'M' + fmt(base[0] - uy * 0.21) + ' ' + fmt(base[1] + ux * 0.21) + 'L' + fmt(t[0]) + ' ' + fmt(t[1]) + 'L' + fmt(base[0] + uy * 0.21) + ' ' + fmt(base[1] - ux * 0.21);
     }
-    return { body, tip, tail: line[0], head };
+    return { body: toPath(line), tip, tail: line[0], head, end };
+  }
+
+  // A crackling bolt along a charged trace: its route with a random
+  // sideways jitter, redrawn every frame so it flickers.
+  function boltPath(track, a, b) {
+    if (b - a < 0.05) return '';
+    const pts = [];
+    for (let t = a; t < b; t += 0.2) {
+      const q = pointAt(track, t);
+      const [ux, uy] = dirAt(track, t);
+      const j = (Math.random() - 0.5) * 0.24;
+      pts.push([q[0] - uy * j, q[1] + ux * j]);
+    }
+    pts.push(pointAt(track, b));
+    return toPath(pts);
   }
 
   function drawArrow(i, s) {
     const g = arrowEls[i];
     if (!g) return;
+    const track = paths[i];
     const shape = shapeAt(i, s);
-    if (!shape) {
-      g.style.display = 'none';
-      return;
-    }
-    g.querySelectorAll('.halo, .glow, .wire').forEach((p) => p.setAttribute('d', shape.body));
-    g.querySelector('.tip').setAttribute('d', shape.tip);
+    const body = shape ? shape.body : '';
+    g.querySelectorAll('.halo, .glow, .wire').forEach((p) => p.setAttribute('d', body));
+    g.querySelector('.tip').setAttribute('d', shape ? shape.tip : '');
     const pad = g.querySelector('.pad');
-    pad.setAttribute('cx', fmt(shape.tail[0]));
-    pad.setAttribute('cy', fmt(shape.tail[1]));
+    if (shape) {
+      pad.setAttribute('cx', fmt(shape.tail[0]));
+      pad.setAttribute('cy', fmt(shape.tail[1]));
+      pad.removeAttribute('visibility');
+    } else pad.setAttribute('visibility', 'hidden');
+    if (!g.classList.contains('energized')) return;
+    // A charged trace leaves an afterglow on the route behind it.
+    const a = Math.max(0, s - TRAIL);
+    const b = Math.min(s, track.total);
+    const near = Math.max(0, s - TRAIL * 0.4);
+    g.querySelector('.trail').setAttribute('d', b > a ? toPath(slice(track, a, b)) : '');
+    g.querySelector('.trail2').setAttribute('d', b > near ? toPath(slice(track, near, b)) : '');
+    g.querySelector('.bolt').setAttribute('d', shape ? boltPath(track, s, shape.end) : '');
+    // A second, fainter bolt reaches back into the afterglow.
+    g.querySelector('.bolt2').setAttribute('d', b > near ? boltPath(track, near, shape ? shape.end : b) : '');
   }
 
-  function buildCore(p) {
+  /*
+   * The core is a battery: a ring of charge cells around a heart that
+   * glows brighter as it fills. Each trace that arrives lights its share of
+   * the cells.
+   */
+  const CHARGE_CELLS = 12;
+  const RING_R = 1.34;
+
+  function buildCore() {
     const g = el('g', { class: 'core' });
-    const circ = 2 * Math.PI * 1.32;
-    g.appendChild(el('circle', { class: 'meter-track', r: 1.32 }));
-    const meter = el('circle', { class: 'meter', r: 1.32, transform: 'rotate(-90)', 'stroke-dasharray': fmt(circ), 'stroke-dashoffset': fmt(circ) });
+    const circ = 2 * Math.PI * RING_R;
+    const seg = circ / CHARGE_CELLS;
+    const turn = 'rotate(' + fmt(-90 + (360 / CHARGE_CELLS) * 0.14) + ')';
+    g.appendChild(el('circle', { class: 'meter-track', r: RING_R, transform: turn, 'stroke-dasharray': fmt(seg * 0.72) + ' ' + fmt(seg * 0.28) }));
+    const meter = el('circle', { class: 'meter', r: RING_R, transform: turn });
     g.appendChild(meter);
     g.appendChild(el('circle', { class: 'shell', r: 1 }));
     const heart = el('circle', { class: 'heart', r: 0.62 });
     g.appendChild(heart);
     const flash = el('circle', { class: 'flash', r: 0.95 });
     g.appendChild(flash);
-    return { g, meter, heart, flash, circ };
+    return { g, meter, heart, flash, circ, seg };
   }
 
   function updateCore() {
     if (!core) return;
     const n = game.puzzle.arrows.length;
     const p = n ? game.absorbed / n : 0;
-    core.meter.setAttribute('stroke-dashoffset', fmt(core.circ * (1 - p)));
-    core.heart.style.opacity = String(0.18 + 0.82 * p);
+    const lit = Math.round(p * CHARGE_CELLS);
+    const dash = [];
+    for (let k = 0; k < lit; k++) dash.push(fmt(core.seg * 0.72), fmt(core.seg * 0.28));
+    core.meter.setAttribute('stroke-dasharray', (dash.length ? dash.join(' ') + ' ' : '') + '0 ' + fmt(core.circ * 2));
+    core.heart.style.opacity = String(0.2 + 0.8 * p);
   }
 
-  // The core takes in a trace: a flash in the trace's color and a ring of
-  // light rippling out.
+  // Short jagged arcs of lightning jumping off the core.
+  function arcs(color, count) {
+    for (let k = 0; k < count; k++) {
+      const ang = Math.random() * Math.PI * 2;
+      const pts = [];
+      for (let r = 0; r <= 4; r++) {
+        const rad = 1.05 + r * (0.32 + Math.random() * 0.12);
+        const wob = ang + (Math.random() - 0.5) * 0.5;
+        pts.push([Math.cos(wob) * rad, Math.sin(wob) * rad]);
+      }
+      const arc = el('path', { class: 'arc', d: toPath(pts), stroke: Math.random() < 0.5 ? '#ffffff' : color });
+      core.g.appendChild(arc);
+      arc.animate([{ opacity: 1 }, { opacity: 0.2 }, { opacity: 0.9 }, { opacity: 0 }], { duration: 260, delay: k * 40, fill: 'both' });
+      setTimeout(() => arc.remove(), 320 + k * 40);
+    }
+  }
+
+  // The core takes in a trace: a flash in its color, arcs of lightning, and
+  // a ring of light rippling out.
   function coreBurst(color, big) {
     if (!core || reduceMotion) return;
     core.heart.style.fill = color;
-    core.flash.animate([{ opacity: big ? 1 : 0.75 }, { opacity: 0 }], { duration: big ? 700 : 380, easing: 'ease-out' });
+    core.flash.animate([{ opacity: big ? 1 : 0.8 }, { opacity: 0 }], { duration: big ? 700 : 380, easing: 'ease-out' });
+    arcs(color, big ? 9 : 4);
     const rings = big ? 3 : 1;
     for (let r = 0; r < rings; r++) {
       const wave = el('circle', { class: 'wave', r: 1, stroke: color });
@@ -722,21 +791,31 @@
     tray = document.createElement('div');
     tray.className = 'tray';
     svg = el('svg', { class: 'arrows', viewBox: '0 0 ' + p.w + ' ' + p.h, 'aria-hidden': 'true' });
-    // The chip: cell lines, a via in every cell, and the bus around the rim.
-    let gridPath = '';
-    for (let x = 0; x <= p.w; x++) gridPath += 'M' + x + ' 0V' + p.h;
-    for (let y = 0; y <= p.h; y++) gridPath += 'M0 ' + y + 'H' + p.w;
-    svg.appendChild(el('path', { class: 'cellgrid', d: gridPath }));
-    const vias = el('g');
-    for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) vias.appendChild(el('circle', { class: 'via', cx: x + 0.5, cy: y + 0.5, r: 0.05 }));
-    svg.appendChild(vias);
+    // The chip: a framed grid of cell tiles, labeled like a circuit board
+    // (columns A, B, C..., rows 1, 2, 3...), and the bus around the rim.
     svg.appendChild(el('rect', { class: 'bus', x: -RIM, y: -RIM, width: p.w + 2 * RIM, height: p.h + 2 * RIM }));
+    svg.appendChild(el('rect', { class: 'chip', x: -0.12, y: -0.12, width: p.w + 0.24, height: p.h + 0.24, rx: 0.14 }));
+    const tiles = el('g', { class: 'tiles' });
+    for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) tiles.appendChild(el('rect', { x: x + 0.07, y: y + 0.07, width: 0.86, height: 0.86, rx: 0.1 }));
+    svg.appendChild(tiles);
+    const silk = el('g', { class: 'silk' });
+    for (let x = 0; x < p.w; x++) {
+      const t = el('text', { x: x + 0.5, y: p.h + 0.42 });
+      t.textContent = String.fromCharCode(65 + x);
+      silk.appendChild(t);
+    }
+    for (let y = 0; y < p.h; y++) {
+      const t = el('text', { x: -0.42, y: y + 0.5 });
+      t.textContent = y + 1;
+      silk.appendChild(t);
+    }
+    svg.appendChild(silk);
     paths = p.arrows.map((a, i) => trackOf(i));
     blockedBy = Core.blockers(p);
     arrowEls = p.arrows.map((a, i) => {
       const g = el('g', { class: 'arrow' });
       g.style.setProperty('--trace', colorOf(i).hex);
-      ['halo', 'glow', 'wire', 'tip'].forEach((c) => g.appendChild(el('path', { class: c })));
+      ['halo', 'trail', 'trail2', 'glow', 'wire', 'tip', 'bolt', 'bolt2'].forEach((c) => g.appendChild(el('path', { class: c })));
       g.appendChild(el('circle', { class: 'pad', r: 0.14 }));
       svg.appendChild(g);
       return g;
@@ -748,7 +827,7 @@
         arrowEls[i] = null;
       } else drawArrow(i, 0);
     });
-    core = buildCore(p);
+    core = buildCore();
     svg.appendChild(core.g);
     updateCore();
     cursorEl = el('rect', { class: 'cursor', width: 0.9, height: 0.9, visibility: 'hidden' });
@@ -790,12 +869,21 @@
   const LAUNCH = 0.25;
   const launch = (t) => (t < LAUNCH ? (t * t) / (2 * LAUNCH) : t - LAUNCH / 2) / (1 - LAUNCH / 2);
 
-  // Slides trace i from one spot on its route to another.
-  function slide(i, from, to, ms, ease) {
+  // When launch() reaches a share of the way.
+  function launchTime(f) {
+    const k = 1 - LAUNCH / 2;
+    const t = f * k + LAUNCH / 2;
+    return t >= LAUNCH ? t : Math.sqrt(f * k * 2 * LAUNCH);
+  }
+
+  // Slides trace i from one spot on its route to another, telling onStep
+  // where it is on every frame.
+  function slide(i, from, to, ms, ease, onStep) {
     const epoch = game.epoch;
     return new Promise((resolve) => {
       if (reduceMotion || ms <= 0) {
         drawArrow(i, to);
+        if (onStep) onStep(to);
         resolve(epoch === game.epoch);
         return;
       }
@@ -803,7 +891,9 @@
       function frame(now) {
         if (epoch !== game.epoch) return resolve(false);
         const t = Math.min(1, (now - start) / ms);
-        drawArrow(i, from + (to - from) * ease(t));
+        const at = from + (to - from) * ease(t);
+        drawArrow(i, at);
+        if (onStep) onStep(at);
         if (t < 1) requestAnimationFrame(frame);
         else resolve(true);
       }
@@ -838,33 +928,66 @@
     else short(i, result);
   }
 
+  /*
+   * A free trace charges up: it turns white-hot with a bolt crackling
+   * along it, runs its route trailing an afterglow, and pours into the
+   * core. The core counts it once the whole trace is inside.
+   */
   async function leave(i) {
     game.gone[i] = true;
     if (game.hinted === i) clearHint();
     if (hovered === i) setHover(-1);
     const total = game.puzzle.arrows.length;
     const remaining = left();
-    Sound.unzip(paths[i].len);
     if (remaining === 1) say('Just one left!');
     else if (remaining === Math.floor(total / 2) && total >= 8) say('Halfway there!');
     else if (remaining > 0 && Math.random() < 0.18) say(pickFrom(CLEARS));
     updateHud();
     saveRun();
     const g = arrowEls[i];
+    const track = paths[i];
     const color = colorOf(i).hex;
-    const dist = paths[i].total;
-    const ok = await slide(i, 0, dist, 260 + dist * 34, launch);
+    if (g) {
+      g.classList.add('energized');
+      svg.insertBefore(g, core.g); // charged traces run on top
+    }
+    const dist = track.total + TRAIL;
+    const ms = 300 + dist * 36;
+    Sound.charge((ms * launchTime(track.total / dist)) / 1000, game.absorbed / total);
+    let feeding = false;
+    let inside = false;
+    const ok = await slide(i, 0, dist, ms, launch, (at) => {
+      if (!feeding && at + track.len - 1 >= track.total) {
+        feeding = true;
+        setFeeding(1);
+      }
+      if (!inside && at >= track.total) {
+        inside = true;
+        setFeeding(-1);
+        absorb(color);
+      }
+    });
     if (!ok) return;
     if (g) g.remove();
     arrowEls[i] = null;
+  }
+
+  // The core glows white while a trace is pouring into it.
+  function setFeeding(change) {
+    game.feeding = Math.max(0, game.feeding + change);
+    if (core) core.g.classList.toggle('feeding', game.feeding > 0);
+  }
+
+  function absorb(color) {
+    const total = game.puzzle.arrows.length;
     game.absorbed++;
     updateCore();
-    const allIn = game.absorbed === total;
-    coreBurst(color, allIn);
-    if (allIn) {
+    const full = game.absorbed === total;
+    coreBurst(color, full);
+    if (full) {
       Sound.overload();
       win();
-    } else Sound.absorb(game.absorbed / total);
+    } else Sound.zap(game.absorbed / total);
   }
 
   async function short(i, result) {

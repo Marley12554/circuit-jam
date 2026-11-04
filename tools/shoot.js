@@ -78,6 +78,13 @@ fs.mkdirSync(out, { recursive: true });
   await p.click('#hintBtn');
   await p.waitForTimeout(500);
   await p.screenshot({ path: out + '/7-level63-hint.png' });
+  // The hinted trace charging up and running the bus to the core.
+  const hinted = await p.evaluate(() => [...document.querySelectorAll('.arrow')].findIndex((g) => g.classList.contains('hint')));
+  await tapArrow(p, hinted);
+  await p.waitForTimeout(380);
+  await p.screenshot({ path: out + '/7b-charging.png' });
+  await p.waitForTimeout(420);
+  await p.screenshot({ path: out + '/7c-charging-later.png' });
   await p.close();
 
   p = await page(phone, { sound: false });
