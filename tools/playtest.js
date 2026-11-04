@@ -1,5 +1,5 @@
 // Plays whole levels through the real page in headless Chromium (animations
-// off) and checks bumps, hints, restart, stars, pause and resume, the level
+// off) and checks shorts, hints, restart, stars, pause and resume, the level
 // map, and puzzle codes. Needs Playwright.
 // Usage: node tools/playtest.js [url]
 const { chromium } = require('playwright');
@@ -75,24 +75,24 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     const p = await open({ sound: false });
     await p.click('#playBtn');
     await p.waitForSelector('.arrow');
-    check((await p.locator('.arrow').count()) === 3, 'level 1 has 3 arrows');
+    check((await p.locator('.arrow').count()) === 3, 'level 1 has 3 traces');
     check((await p.locator('.arrow.hint').count()) === 1, 'level 1 starts with a free hint');
     check((await p.textContent('#hintBadge')) === '3', 'the free hint costs nothing');
     check(await p.isDisabled('#restartBtn'), 'restart off before any tap');
-    // The blue arrow is blocked by the red one.
+    // The second trace is blocked by the first.
     await tapArrow(p, 1);
-    check((await num(p, 'bumpCount')) === 1, 'a blocked arrow counts a bump');
-    check((await num(p, 'leftCount')) === 3, 'a bump leaves the board as it was');
-    check(/red arrow is in the way/.test(await p.textContent('#say')), 'the robot names the blocker');
-    check(!(await p.isDisabled('#restartBtn')), 'restart on after a bump');
+    check((await num(p, 'bumpCount')) === 1, 'a blocked trace counts a short');
+    check((await num(p, 'leftCount')) === 3, 'a short leaves the board as it was');
+    check(/teal trace is in the way/.test(await p.textContent('#say')), 'the drone names the blocker');
+    check(!(await p.isDisabled('#restartBtn')), 'restart on after a short');
     await tapArrow(p, 0);
-    check((await num(p, 'leftCount')) === 2, 'a free arrow leaves');
-    check((await p.locator('.arrow.hint').count()) === 0, 'the hint goes with its arrow');
+    check((await num(p, 'leftCount')) === 2, 'a free trace leaves');
+    check((await p.locator('.arrow.hint').count()) === 0, 'the hint goes with its trace');
     await tapArrow(p, 1);
     await tapArrow(p, 2);
     await p.waitForSelector('#win:not([hidden])');
-    check((await p.locator('#winStars i.on').count()) === 2, 'one bump: 2 stars');
-    check((await p.textContent('#winStats')) === '1 bump', 'win card counts the bump');
+    check((await p.locator('#winStars i.on').count()) === 2, 'one short: 2 stars');
+    check((await p.textContent('#winStats')) === '1 short', 'win card counts the short');
     const s = await stored(p);
     check(s.stars[1] === 2 && s.best[1] === 1 && !s.run, 'stars and best saved, run cleared');
     // Play again for 3 stars.
@@ -117,15 +117,15 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     check((await p.textContent('#hintBadge')) === '2', 'a hint costs one');
     const hinted = await p.evaluate(() => [...document.querySelectorAll('.arrow')].findIndex((g) => g.classList.contains('hint')));
     const free = await freeNow(p);
-    check(free.includes(hinted), 'the hint shows a free arrow');
+    check(free.includes(hinted), 'the hint shows a free trace');
     await p.click('#hintBtn');
     check((await p.textContent('#hintBadge')) === '2', 'asking again repeats the hint for free');
     const blocked = await blockedNow(p);
     await tapArrow(p, blocked);
     await tapArrow(p, blocked);
-    check((await num(p, 'bumpCount')) === 2, 'two bumps counted');
+    check((await num(p, 'bumpCount')) === 2, 'two shorts counted');
     await p.click('#restartBtn');
-    check((await num(p, 'bumpCount')) === 0 && (await p.textContent('#hintBadge')) === '3', 'restart clears bumps and refills hints');
+    check((await num(p, 'bumpCount')) === 0 && (await p.textContent('#hintBadge')) === '3', 'restart clears shorts and refills hints');
     await p.click('#hintBtn');
     await clearAll(p);
     check((await p.locator('#winStars i.on').count()) === 2, 'a hint caps a clean clear at 2 stars');
@@ -146,8 +146,8 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.click('#playBtn');
     await p.waitForSelector('.arrow');
     check((await num(p, 'leftCount')) === total - 2, 'resumed with the same arrows left');
-    check((await num(p, 'bumpCount')) === 1, 'resumed with the same bumps');
-    check((await p.locator('.arrow').count()) === total - 2, 'gone arrows stay gone');
+    check((await num(p, 'bumpCount')) === 1, 'resumed with the same shorts');
+    check((await p.locator('.arrow').count()) === total - 2, 'gone traces stay gone');
     // Another level from the map; the paused one shows as Resume.
     await p.click('#homeBtn');
     await p.click('#levelsBtn');
@@ -159,7 +159,7 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.context().close();
   }
 
-  // Make your own: presets, settings, and codes.
+  // Build your own: presets, settings, and codes.
   {
     const p = await open({ sound: false });
     await p.click('#customBtn');
@@ -198,9 +198,9 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.focus('#board');
     await p.keyboard.press('ArrowDown'); // shows the box in the middle (1, 2)
     await p.keyboard.press('ArrowLeft');
-    await p.keyboard.press('ArrowUp'); // (0, 1): the red arrow's head
+    await p.keyboard.press('ArrowUp'); // (0, 1): the first trace's arrow
     await p.keyboard.press('Enter');
-    check((await num(p, 'leftCount')) === 2, 'Enter taps the arrow under the box');
+    check((await num(p, 'leftCount')) === 2, 'Enter taps the trace under the box');
     await p.context().close();
   }
 

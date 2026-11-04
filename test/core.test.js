@@ -173,11 +173,11 @@ test('stars: clean is 3, a few bumps 2, more 1, hints cap at 2', () => {
 });
 
 test('sets: ten levels each, then endless sets', () => {
-  assert.strictEqual(Core.setOf(1).name, 'Ribbon');
-  assert.strictEqual(Core.setOf(10).name, 'Ribbon');
-  assert.strictEqual(Core.setOf(11).name, 'Zigzag');
-  assert.strictEqual(Core.setOf(Core.SET_COUNT * 10 + 1).name, 'Vortex');
-  assert.strictEqual(Core.setOf(Core.SET_COUNT * 10 + 61).name, 'Vortex 2');
+  assert.strictEqual(Core.setOf(1).name, 'Breadboard');
+  assert.strictEqual(Core.setOf(10).name, 'Breadboard');
+  assert.strictEqual(Core.setOf(11).name, 'Relay');
+  assert.strictEqual(Core.setOf(Core.SET_COUNT * 10 + 1).name, 'Fusion');
+  assert.strictEqual(Core.setOf(Core.SET_COUNT * 10 + 61).name, 'Fusion 2');
 });
 
 test('early levels have only straight arrows; bends arrive at level 6', () => {

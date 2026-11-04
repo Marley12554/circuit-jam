@@ -1,6 +1,7 @@
 // Drives the game in headless Chromium and saves screenshots: home, level 1,
-// an arrow unfolding, a bump, the win card, the level map, a big level,
-// Make your own, and a desktop view. Needs Playwright.
+// a short, a trace unzipping and running the rim into the core, the win
+// card, the level map, a big level with a hint, Build your own, and a
+// desktop view. Needs Playwright.
 // Usage: node tools/shoot.js <out-dir> [url]
 const fs = require('fs');
 const { chromium } = require('playwright');
@@ -44,17 +45,21 @@ fs.mkdirSync(out, { recursive: true });
   await p.waitForSelector('.arrow');
   await p.waitForTimeout(300);
   await p.screenshot({ path: out + '/2-level1.png' });
-  await tapArrow(p, 1); // blocked by red: bump
+  await tapArrow(p, 1); // blocked by the first trace: a short
   await p.waitForTimeout(150);
-  await p.screenshot({ path: out + '/3-bump.png' });
+  await p.screenshot({ path: out + '/3-short.png' });
   await p.waitForTimeout(500);
-  await tapArrow(p, 0); // free: unfolds off the top
-  await p.waitForTimeout(120);
-  await p.screenshot({ path: out + '/4-unfolding.png' });
+  await tapArrow(p, 0); // free: unzips up and runs the rim into the core
+  await p.waitForTimeout(160);
+  await p.screenshot({ path: out + '/4a-unzipping.png' });
+  await p.waitForTimeout(260);
+  await p.screenshot({ path: out + '/4b-into-core.png' });
   await p.waitForTimeout(600);
   await tapArrow(p, 1);
   await p.waitForTimeout(600);
   await tapArrow(p, 2);
+  await p.waitForTimeout(500);
+  await p.screenshot({ path: out + '/4c-on-the-rim.png' });
   await p.waitForTimeout(1800);
   await p.screenshot({ path: out + '/5-win.png' });
   await p.close();
@@ -78,7 +83,7 @@ fs.mkdirSync(out, { recursive: true });
   p = await page(phone, { sound: false });
   await p.click('#customBtn');
   await p.waitForTimeout(300);
-  await p.screenshot({ path: out + '/8-make-your-own.png' });
+  await p.screenshot({ path: out + '/8-build-your-own.png' });
   await p.close();
 
   p = await page({ width: 1280, height: 800 }, progress);

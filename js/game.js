@@ -1,7 +1,8 @@
 /*
- * Unfold: screens, the arrow board, unfold and bump animations, tools, and
- * progress. The rules and the level generator live in core.js. Generating a
- * board takes a few milliseconds, so everything runs on the page.
+ * Unfold: screens, the circuit board, the unzip, short, and core
+ * animations, tools, and progress. The rules and the level generator live
+ * in core.js. Generating a board takes a few milliseconds, so everything
+ * runs on the page.
  */
 (function () {
   'use strict';
@@ -12,10 +13,33 @@
   const reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  const rootStyle = getComputedStyle(document.documentElement);
-  const PALETTE = Array.from({ length: Core.PALETTE_SIZE }, (_, i) => rootStyle.getPropertyValue('--c' + i).trim());
-  const COLOR_NAMES = ['red', 'orange', 'yellow', 'lime', 'green', 'aqua', 'sky blue', 'blue', 'purple', 'pink', 'brown', 'navy'];
-  const SET_COLORS = ['#0e9aad', '#ee6c1f', '#e93f72', '#2a85e8', '#14a06f', '#7a4bf0', '#d4541e'];
+  // Trace colors. Each set uses a few of them, one main and some accents;
+  // later sets use more. Red is kept for shorts.
+  const COLORS = {
+    teal: '#2fe6b4',
+    amber: '#ffbe4d',
+    violet: '#a98bff',
+    magenta: '#f07bff',
+    cyan: '#4fd8ff',
+    lime: '#b8f24a',
+    blue: '#6b8cff',
+  };
+  // Repeats set the mix: three of the main color to one accent, and so on.
+  const SET_PALETTES = [
+    ['teal', 'teal', 'teal', 'amber'],
+    ['violet', 'violet', 'violet', 'lime'],
+    ['cyan', 'cyan', 'cyan', 'amber'],
+    ['amber', 'amber', 'teal', 'violet'],
+    ['blue', 'blue', 'cyan', 'magenta'],
+    ['teal', 'teal', 'violet', 'amber', 'magenta'],
+    ['magenta', 'magenta', 'cyan', 'lime', 'violet'],
+  ];
+  const CUSTOM_PALETTE = 5;
+
+  function paletteOf(index) {
+    if (index < SET_PALETTES.length) return SET_PALETTES[index];
+    return SET_PALETTES[3 + ((index - SET_PALETTES.length) % (SET_PALETTES.length - 3))];
+  }
 
   const ICONS = {
     back: '<svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg>',
@@ -27,26 +51,26 @@
   };
 
   const INTROS = {
-    1: 'Tap the glowing arrow. Nothing is in front of it, so it slides right off!',
-    2: 'Blocked arrows bump and stay put. Look before you tap!',
-    6: 'Bendy arrows! Only the path ahead of the head matters. The body just follows.',
-    11: 'Bigger boards now. Find the arrows with a clear path!',
-    21: 'Longer arrows that twist and turn. Follow each one to its head!',
+    1: 'Tap the glowing trace. Its path is clear, so it unzips straight into the core!',
+    2: 'A blocked trace shorts out and stays put. Look before you tap!',
+    6: 'Bent traces! Only the path in front of the arrow matters. The rest just follows.',
+    11: 'New chip, new colors. Find the traces with a clear path!',
+    21: 'Longer traces that twist and turn. Follow each one to its arrow!',
   };
-  const CHEERS = ["Let's unfold this!", 'Find a clear path!', 'Look before you tap!', 'One clear lane at a time!', 'You can do it!'];
-  const CLEARS = ['Zoom!', 'Off it goes!', 'Nice one!', 'Swoosh!', 'Clear lane!', 'Great eye!'];
+  const CHEERS = ["Let's power this up!", 'Find a clear path!', 'Look before you tap!', 'Charge the core!', 'One clear lane at a time!'];
+  const CLEARS = ['Charged!', 'Into the core!', 'Clean signal!', 'Nice routing!', 'Power up!', 'Sharp eye!'];
 
-  // Make your own: three-way settings, each with a tiny picture.
+  // Build your own: three-way settings, each with a tiny picture.
   const CHOICES = {
     density: [
-      { name: 'Roomy', icon: '<rect class="solid" x="3" y="4" width="6" height="6" rx="1.5"/><rect class="solid" x="17" y="4" width="6" height="6" rx="1.5"/>' },
-      { name: 'Snug', icon: '<rect class="solid" x="1.5" y="4" width="6" height="6" rx="1.5"/><rect class="solid" x="10" y="4" width="6" height="6" rx="1.5"/><rect class="solid" x="18.5" y="4" width="6" height="6" rx="1.5"/>' },
-      { name: 'Packed', icon: '<rect class="solid" x="0.5" y="1" width="12" height="5.5" rx="1.5"/><rect class="solid" x="13.5" y="1" width="12" height="5.5" rx="1.5"/><rect class="solid" x="0.5" y="7.5" width="12" height="5.5" rx="1.5"/><rect class="solid" x="13.5" y="7.5" width="12" height="5.5" rx="1.5"/>' },
+      { name: 'Roomy', icon: '<rect class="solid" x="3" y="4" width="6" height="6"/><rect class="solid" x="17" y="4" width="6" height="6"/>' },
+      { name: 'Snug', icon: '<rect class="solid" x="1.5" y="4" width="6" height="6"/><rect class="solid" x="10" y="4" width="6" height="6"/><rect class="solid" x="18.5" y="4" width="6" height="6"/>' },
+      { name: 'Packed', icon: '<rect class="solid" x="0.5" y="1" width="12" height="5.5"/><rect class="solid" x="13.5" y="1" width="12" height="5.5"/><rect class="solid" x="0.5" y="7.5" width="12" height="5.5"/><rect class="solid" x="13.5" y="7.5" width="12" height="5.5"/>' },
     ],
     length: [
-      { name: 'Short', icon: '<path d="M9 7h7"/><path d="m13.5 4 3 3-3 3"/>' },
-      { name: 'Mixed', icon: '<path d="M5 7h15"/><path d="m17.5 4 3 3-3 3"/>' },
-      { name: 'Long', icon: '<path d="M1.5 7h22"/><path d="m21 4 3 3-3 3"/>' },
+      { name: 'Short', icon: '<circle cx="9" cy="7" r="2"/><path d="M11 7h5"/><path d="m13.5 4 3 3-3 3"/>' },
+      { name: 'Mixed', icon: '<circle cx="5" cy="7" r="2"/><path d="M7 7h13"/><path d="m17.5 4 3 3-3 3"/>' },
+      { name: 'Long', icon: '<circle cx="2.5" cy="7" r="2"/><path d="M4.5 7h19"/><path d="m21 4 3 3-3 3"/>' },
     ],
     bend: [
       { name: 'Straight', icon: '<path d="M2 7h20"/><path d="m19.5 4 3 3-3 3"/>' },
@@ -55,7 +79,6 @@
     ],
   };
   const CHOICE_KEYS = ['density', 'length', 'bend'];
-  const CHOICE_ROWS = { density: 'densityRow', length: 'lengthRow', bend: 'bendRow' };
 
   const PRESETS = [
     { id: 'easy', name: 'Easy', w: 6, h: 7, density: 0, length: 0, bend: 0 },
@@ -118,17 +141,28 @@
       $(id).hidden = id !== name;
     });
     $('win').hidden = true;
+    if (name !== 'play') useSet(0);
     if (name === 'home') renderHome();
     if (name === 'levels') renderLevels();
     if (name === 'custom') renderCustom();
   }
 
-  function setColor(index) {
-    return SET_COLORS[index % SET_COLORS.length];
+  function mainColor(index) {
+    return COLORS[paletteOf(index)[0]];
   }
 
+  // The current set colors the HUD, the drone, the core, and the wires.
+  let wireColors = [COLORS.teal, COLORS.amber];
+
   function useSet(index) {
-    document.documentElement.style.setProperty('--lab', setColor(index));
+    const pal = paletteOf(index);
+    document.documentElement.style.setProperty('--lab', COLORS[pal[0]]);
+    const accent = pal.find((c) => c !== pal[0]);
+    const next = [COLORS[pal[0]], COLORS[accent]];
+    if (next[0] !== wireColors[0] || next[1] !== wireColors[1]) {
+      wireColors = next;
+      drawWires();
+    }
   }
 
   // Play continues from the first level not yet finished, so levels played
@@ -149,9 +183,9 @@
     $('resumeBtn').hidden = !run || runIsNext;
     $('playBtn').classList.toggle('primary', !run || runIsNext);
     if (run && !runIsNext) {
-      const where = run.mode === 'level' ? 'Level ' + run.level : 'Your puzzle';
+      const where = run.mode === 'level' ? 'Level ' + run.level : 'Your board';
       const left = run.puzzle.arrows.length - run.gone.length;
-      $('resumeSub').textContent = where + ' · ' + left + (left === 1 ? ' arrow left' : ' arrows left');
+      $('resumeSub').textContent = where + ' · ' + left + (left === 1 ? ' trace left' : ' traces left');
     }
     $('soundToggle').checked = saved.sound;
   }
@@ -172,15 +206,15 @@
       for (let n = first; n < first + 10; n++) earned += saved.stars[n] || 0;
       const section = document.createElement('section');
       section.className = 'lab';
-      section.style.setProperty('--lab', setColor(i));
+      section.style.setProperty('--lab', mainColor(i));
       section.innerHTML =
         '<div class="lab-head"><h3>' + set.name + '</h3><span>' + earned + ' of 30 stars</span></div><div class="level-grid"></div>';
       const grid = section.querySelector('.level-grid');
       for (let n = first; n < first + 10; n++) {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'level-btn' + (n === next ? ' current' : '');
         const stars = saved.stars[n] || 0;
+        btn.className = 'level-btn' + (n === next ? ' current' : stars ? ' done' : '');
         btn.innerHTML =
           '<span>' + n + '</span><span class="mini-stars">' +
           [1, 2, 3].map((s) => '<i class="' + (s <= stars ? 'on' : '') + '"></i>').join('') +
@@ -209,7 +243,7 @@
     if (current) current.scrollIntoView({ block: 'center' });
   }
 
-  // ---------- Make your own ----------
+  // ---------- Build your own ----------
 
   function clampCustom() {
     const c = saved.custom;
@@ -275,15 +309,16 @@
   // A tiny picture of a real board each preset makes, drawn to scale.
   function presetBoard(p) {
     const lv = Core.generate(Core.customSpec(Object.assign({}, p, { seed: 1 })));
+    const pal = paletteOf(CUSTOM_PALETTE);
     let out = '';
     lv.arrows.forEach((a) => {
       const pts = a.cells.map(([x, y]) => (x + 0.5) + ' ' + (y + 0.5)).join(' L');
-      out += '<path d="M' + pts + '" stroke="' + PALETTE[a.color] + '"/>';
+      out += '<path d="M' + pts + '" stroke="' + COLORS[pal[a.color % pal.length]] + '"/>';
     });
     return (
       '<svg class="preset-board" viewBox="-0.3 -0.3 ' + (lv.w + 0.6) + ' ' + (lv.h + 0.6) + '" aria-hidden="true">' +
-      '<rect class="mini-dot" x="-0.3" y="-0.3" width="' + (lv.w + 0.6) + '" height="' + (lv.h + 0.6) + '" rx="0.8"/>' +
-      '<g fill="none" stroke-width="0.55" stroke-linecap="round" stroke-linejoin="round">' + out + '</g></svg>'
+      '<rect class="mini-dot" x="-0.3" y="-0.3" width="' + (lv.w + 0.6) + '" height="' + (lv.h + 0.6) + '"/>' +
+      '<g fill="none" stroke-width="0.4" stroke-linejoin="miter">' + out + '</g></svg>'
     );
   }
 
@@ -327,6 +362,64 @@
     return Object.assign({}, saved.custom, { seed: 1000 + Math.floor(Math.random() * 9000) });
   }
 
+  // ---------- Live wires on the wall ----------
+
+  /*
+   * Wires run in from the screen edges along the background grid and end in
+   * a pad. Every wire carries a spark that rides it from the edge to the
+   * pad, over and over, at its own pace. Redrawn when the window resizes.
+   */
+  const GRID = 28;
+
+  function drawWires() {
+    const host = $('wires');
+    if (!host) return;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    host.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    const rng = Core.makeRng('wires:' + W + 'x' + H);
+    const count = Math.max(12, Math.min(40, Math.round((W * H) / 16000)));
+    const cols = Math.floor(W / GRID);
+    const rows = Math.floor(H / GRID);
+    let out = '';
+    for (let k = 0; k < count; k++) {
+      // Start on an edge, step inward, then wander along the grid.
+      const side = rng.int(4);
+      let x = side === 1 ? cols + 1 : side === 3 ? -1 : 1 + rng.int(Math.max(1, cols - 1));
+      let y = side === 0 ? -1 : side === 2 ? rows + 1 : 1 + rng.int(Math.max(1, rows - 1));
+      let dir = (side + 2) % 4;
+      const pts = [[x, y]];
+      let length = 0;
+      const legs = 2 + rng.int(3);
+      for (let leg = 0; leg < legs; leg++) {
+        const steps = 2 + rng.int(5);
+        for (let s = 0; s < steps; s++) {
+          const nx = x + Core.DX[dir];
+          const ny = y + Core.DY[dir];
+          if (leg > 0 && (nx < 1 || ny < 1 || nx > cols - 1 || ny > rows - 1)) break;
+          x = nx;
+          y = ny;
+          length++;
+        }
+        pts.push([x, y]);
+        dir = (dir + (rng() < 0.5 ? 1 : 3)) % 4;
+      }
+      const d = 'M' + pts.map(([px, py]) => px * GRID + ' ' + py * GRID).join('L');
+      const end = pts[pts.length - 1];
+      const color = rng() < 0.7 ? wireColors[0] : wireColors[1];
+      const id = 'wire' + k;
+      const dur = (1.4 + (length * GRID) / 110 + rng() * 1.5).toFixed(2);
+      const spark = reduceMotion
+        ? '<g class="spark" transform="translate(' + end[0] * GRID + ' ' + end[1] * GRID + ')"><circle r="7" class="halo"/><circle r="2.8"/></g>'
+        : '<g class="spark"><circle r="7" class="halo"/><circle r="2.8"/><animateMotion dur="' + dur + 's" begin="-' + (rng() * dur).toFixed(2) +
+          's" repeatCount="indefinite"><mpath href="#' + id + '"/></animateMotion></g>';
+      out +=
+        '<g style="--c:' + color + '"><path id="' + id + '" class="w" d="' + d + '"/>' +
+        '<circle class="pad" cx="' + end[0] * GRID + '" cy="' + end[1] * GRID + '" r="5"/>' + spark + '</g>';
+    }
+    host.innerHTML = out;
+  }
+
   // ---------- The game ----------
 
   const board = $('board');
@@ -335,6 +428,7 @@
     level: 1,
     custom: null,
     puzzle: null,
+    palette: SET_PALETTES[0],
     gone: [],
     bumps: 0,
     hintsLeft: Core.HINTS,
@@ -343,12 +437,18 @@
     done: false,
     epoch: 0,
     busy: new Set(),
-    exiting: 0,
+    absorbed: 0,
     cursor: null,
   };
 
+  // Board geometry, in cells: the bus runs RIM cells outside the grid, and
+  // the core sits on it at the top middle.
+  const RIM = 0.75;
+  const CORE_R = 0.62;
+
   let tray = null;
   let svg = null;
+  let core = null;
   let arrowEls = [];
   let paths = [];
   let blockedBy = [];
@@ -356,8 +456,9 @@
   let cell = 40;
   let hovered = -1;
 
-  function nameOf(i) {
-    return COLOR_NAMES[game.puzzle.arrows[i].color];
+  function colorOf(i) {
+    const name = game.palette[game.puzzle.arrows[i].color % game.palette.length];
+    return { name, hex: COLORS[name] };
   }
 
   let alertTimer = 0;
@@ -391,15 +492,16 @@
     game.level = n;
     game.custom = null;
     const set = Core.setOf(n);
-    useSet(set.index);
     show('play');
+    useSet(set.index);
+    game.palette = paletteOf(set.index);
     $('setName').textContent = set.name;
     $('levelTitle').textContent = 'Level ' + n;
     let puzzle;
     try {
       puzzle = getLevel(n);
     } catch (err) {
-      say('Oops, that board got tangled. Go back and try again!');
+      say('That board got tangled. Go back and try again!');
       return;
     }
     setPuzzle(puzzle);
@@ -413,15 +515,16 @@
   function startCustom(spec) {
     game.mode = 'custom';
     game.custom = spec;
-    useSet(5);
     show('play');
-    $('setName').textContent = 'Your puzzle';
+    useSet(CUSTOM_PALETTE);
+    game.palette = paletteOf(CUSTOM_PALETTE);
+    $('setName').textContent = 'Your board';
     $('levelTitle').textContent = Core.codeOf(spec);
     let puzzle;
     try {
       puzzle = Core.generate(Core.customSpec(spec));
     } catch (err) {
-      say("I couldn't fold that one. Try different settings!");
+      say("I couldn't build that one. Try different settings!");
       return;
     }
     setPuzzle(puzzle);
@@ -439,8 +542,8 @@
   function resetState() {
     game.epoch++;
     game.busy.clear();
-    game.exiting = 0;
     game.gone = new Array(game.puzzle.arrows.length).fill(false);
+    game.absorbed = 0;
     game.bumps = 0;
     game.hintsLeft = Core.HINTS;
     game.helped = false;
@@ -456,7 +559,7 @@
     const started = game.bumps > 0 || game.gone.some(Boolean) || game.helped;
     $('restartBtn').disabled = !game.puzzle || !started;
     const repeat = game.hinted >= 0 && !game.gone[game.hinted];
-    $('hintBtn').disabled = !game.puzzle || game.done || (game.hintsLeft <= 0 && !repeat);
+    $('hintBtn').disabled = !game.puzzle || game.done || left() === 0 || (game.hintsLeft <= 0 && !repeat);
   }
 
   // ---------- Drawing the board ----------
@@ -468,62 +571,149 @@
   }
 
   /*
-   * Each arrow moves along one fixed track: its own cells from tail to head,
-   * then its lane, then on past the edge. At rest it covers the first part;
-   * leaving or bumping slides that window forward along the track, so the
-   * body follows the head around every bend.
+   * Each trace moves along one fixed route: its own cells from tail to
+   * head, then straight along its lane to the bus around the rim, then
+   * along the bus (the shorter way round) into the core at the top. At rest
+   * it covers the first part. Leaving slides it along the route, so the
+   * body follows the head around every bend, and the core swallows it.
    */
   function trackOf(i) {
     const p = game.puzzle;
     const a = p.arrows[i];
     const pts = a.cells.map(([x, y]) => [x + 0.5, y + 0.5]);
     const d = Core.dirOf(a);
-    const lane = Core.laneOf(p, i).length;
-    const head = pts[pts.length - 1];
-    for (let k = 1; k <= lane + a.cells.length + 3; k++) pts.push([head[0] + Core.DX[d] * k, head[1] + Core.DY[d] * k]);
-    return { pts, len: a.cells.length, lane };
+    const [hx, hy] = pts[pts.length - 1];
+    const { w, h } = p;
+    const top = -RIM;
+    const bottom = h + RIM;
+    const leftX = -RIM;
+    const rightX = w + RIM;
+    const coreX = w / 2;
+    if (d === 0) pts.push([hx, top]);
+    else if (d === 1) pts.push([rightX, hy], [rightX, top]);
+    else if (d === 3) pts.push([leftX, hy], [leftX, top]);
+    else if (hx < coreX) pts.push([hx, bottom], [leftX, bottom], [leftX, top]);
+    else pts.push([hx, bottom], [rightX, bottom], [rightX, top]);
+    pts.push([coreX, top]);
+    // Drop repeated points, then measure the route.
+    const route = [pts[0]];
+    pts.slice(1).forEach((q) => {
+      const last = route[route.length - 1];
+      if (Math.abs(q[0] - last[0]) > 1e-6 || Math.abs(q[1] - last[1]) > 1e-6) route.push(q);
+    });
+    const at = [0];
+    for (let k = 1; k < route.length; k++) at.push(at[k - 1] + Math.hypot(route[k][0] - route[k - 1][0], route[k][1] - route[k - 1][1]));
+    return { pts: route, at, total: at[at.length - 1], len: a.cells.length };
   }
 
-  function pointAt(pts, t) {
-    const i = Math.min(pts.length - 2, Math.max(0, Math.floor(t)));
-    const f = t - i;
-    return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f];
+  // Which segment of the route a distance falls on.
+  function segmentAt(track, t) {
+    const { at } = track;
+    let lo = 0;
+    let hi = at.length - 2;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (at[mid] <= t) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
   }
 
-  // The arrow's outline with its body starting s cells along the track.
+  function pointAt(track, t) {
+    const k = segmentAt(track, t);
+    const a = track.pts[k];
+    const b = track.pts[k + 1];
+    const span = track.at[k + 1] - track.at[k] || 1;
+    const f = Math.max(0, Math.min(1, (t - track.at[k]) / span));
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+  }
+
+  const fmt = (n) => Math.round(n * 1000) / 1000;
+
+  // The trace's shape with its tail s cells along its route. Whatever has
+  // passed the end of the route is inside the core and not drawn.
   function shapeAt(i, s) {
-    const { pts, len } = paths[i];
-    const end = s + len - 1;
-    const line = [pointAt(pts, s)];
-    for (let k = Math.floor(s) + 1; k < end; k++) line.push(pts[k]);
-    const head = pointAt(pts, end);
+    const track = paths[i];
+    if (s >= track.total) return null;
+    const start = s;
+    const want = s + track.len - 1;
+    const end = Math.min(want, track.total);
+    const line = [pointAt(track, start)];
+    for (let k = 1; k < track.pts.length; k++) if (track.at[k] > start + 1e-6 && track.at[k] < end - 1e-6) line.push(track.pts[k]);
+    const head = pointAt(track, end);
     line.push(head);
-    const k = Math.min(pts.length - 2, Math.floor(end));
-    const ux = pts[k + 1][0] - pts[k][0];
-    const uy = pts[k + 1][1] - pts[k][1];
-    const tip = [head[0] + ux * 0.36, head[1] + uy * 0.36];
-    const bx = head[0] - ux * 0.1;
-    const by = head[1] - uy * 0.1;
-    const corners = [
-      [bx - uy * 0.33, by + ux * 0.33],
-      [bx + uy * 0.33, by - ux * 0.33],
-    ];
-    const f = (n) => Math.round(n * 1000) / 1000;
-    const body = 'M' + line.map((q) => f(q[0]) + ' ' + f(q[1])).join('L');
-    const arrowTip = 'M' + [tip, corners[0], corners[1]].map((q) => f(q[0]) + ' ' + f(q[1])).join('L') + 'Z';
-    return { body, tip: arrowTip, head };
+    const body = 'M' + line.map((q) => fmt(q[0]) + ' ' + fmt(q[1])).join('L');
+    let tip = '';
+    if (want < track.total - 0.25) {
+      const k = segmentAt(track, Math.max(0, end - 1e-6));
+      const a = track.pts[k];
+      const b = track.pts[k + 1];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      const ux = (b[0] - a[0]) / L;
+      const uy = (b[1] - a[1]) / L;
+      const t = [head[0] + ux * 0.3, head[1] + uy * 0.3];
+      const base = [t[0] - ux * 0.28, t[1] - uy * 0.28];
+      tip = 'M' + fmt(base[0] - uy * 0.21) + ' ' + fmt(base[1] + ux * 0.21) + 'L' + fmt(t[0]) + ' ' + fmt(t[1]) + 'L' + fmt(base[0] + uy * 0.21) + ' ' + fmt(base[1] - ux * 0.21);
+    }
+    return { body, tip, tail: line[0], head };
   }
 
   function drawArrow(i, s) {
     const g = arrowEls[i];
     if (!g) return;
     const shape = shapeAt(i, s);
-    g.querySelectorAll('.halo, .under, .body, .shine').forEach((p) => p.setAttribute('d', shape.body));
-    g.querySelectorAll('.halo-tip, .under-tip, .tip').forEach((p) => p.setAttribute('d', shape.tip));
-    // Fade out once the head is past the edge.
-    const { lane, len } = paths[i];
-    const out = (s - lane - 0.3) / (len * 0.8 + 0.6);
-    g.style.opacity = out > 0 ? String(Math.max(0, 1 - out)) : '';
+    if (!shape) {
+      g.style.display = 'none';
+      return;
+    }
+    g.querySelectorAll('.halo, .glow, .wire').forEach((p) => p.setAttribute('d', shape.body));
+    g.querySelector('.tip').setAttribute('d', shape.tip);
+    const pad = g.querySelector('.pad');
+    pad.setAttribute('cx', fmt(shape.tail[0]));
+    pad.setAttribute('cy', fmt(shape.tail[1]));
+  }
+
+  function buildCore(p) {
+    const g = el('g', { class: 'core' });
+    const circ = 2 * Math.PI * 1.32;
+    g.appendChild(el('circle', { class: 'meter-track', r: 1.32 }));
+    const meter = el('circle', { class: 'meter', r: 1.32, transform: 'rotate(-90)', 'stroke-dasharray': fmt(circ), 'stroke-dashoffset': fmt(circ) });
+    g.appendChild(meter);
+    g.appendChild(el('circle', { class: 'shell', r: 1 }));
+    const heart = el('circle', { class: 'heart', r: 0.62 });
+    g.appendChild(heart);
+    const flash = el('circle', { class: 'flash', r: 0.95 });
+    g.appendChild(flash);
+    return { g, meter, heart, flash, circ };
+  }
+
+  function updateCore() {
+    if (!core) return;
+    const n = game.puzzle.arrows.length;
+    const p = n ? game.absorbed / n : 0;
+    core.meter.setAttribute('stroke-dashoffset', fmt(core.circ * (1 - p)));
+    core.heart.style.opacity = String(0.18 + 0.82 * p);
+  }
+
+  // The core takes in a trace: a flash in the trace's color and a ring of
+  // light rippling out.
+  function coreBurst(color, big) {
+    if (!core || reduceMotion) return;
+    core.heart.style.fill = color;
+    core.flash.animate([{ opacity: big ? 1 : 0.75 }, { opacity: 0 }], { duration: big ? 700 : 380, easing: 'ease-out' });
+    const rings = big ? 3 : 1;
+    for (let r = 0; r < rings; r++) {
+      const wave = el('circle', { class: 'wave', r: 1, stroke: color });
+      core.g.insertBefore(wave, core.g.firstChild);
+      wave.animate(
+        [{ transform: 'scale(1)', opacity: 0.9 }, { transform: 'scale(' + (big ? 5 : 2.6) + ')', opacity: 0 }],
+        { duration: big ? 900 : 600, delay: r * 160, easing: 'ease-out', fill: 'both' }
+      );
+      setTimeout(() => wave.remove(), (big ? 900 : 600) + r * 160 + 60);
+    }
+    setTimeout(() => {
+      if (core) core.heart.style.fill = '';
+    }, 420);
   }
 
   function buildBoard() {
@@ -532,32 +722,36 @@
     tray = document.createElement('div');
     tray.className = 'tray';
     svg = el('svg', { class: 'arrows', viewBox: '0 0 ' + p.w + ' ' + p.h, 'aria-hidden': 'true' });
-    const dots = el('g');
-    for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) dots.appendChild(el('circle', { class: 'dot', cx: x + 0.5, cy: y + 0.5, r: 0.07 }));
-    svg.appendChild(dots);
+    // The chip: cell lines, a via in every cell, and the bus around the rim.
+    let gridPath = '';
+    for (let x = 0; x <= p.w; x++) gridPath += 'M' + x + ' 0V' + p.h;
+    for (let y = 0; y <= p.h; y++) gridPath += 'M0 ' + y + 'H' + p.w;
+    svg.appendChild(el('path', { class: 'cellgrid', d: gridPath }));
+    const vias = el('g');
+    for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) vias.appendChild(el('circle', { class: 'via', cx: x + 0.5, cy: y + 0.5, r: 0.05 }));
+    svg.appendChild(vias);
+    svg.appendChild(el('rect', { class: 'bus', x: -RIM, y: -RIM, width: p.w + 2 * RIM, height: p.h + 2 * RIM }));
     paths = p.arrows.map((a, i) => trackOf(i));
     blockedBy = Core.blockers(p);
     arrowEls = p.arrows.map((a, i) => {
       const g = el('g', { class: 'arrow' });
-      g.style.setProperty('--c', PALETTE[a.color]);
-      g.appendChild(el('path', { class: 'halo' }));
-      g.appendChild(el('path', { class: 'halo-tip' }));
-      g.appendChild(el('path', { class: 'under', transform: 'translate(0 0.08)' }));
-      g.appendChild(el('path', { class: 'under-tip', transform: 'translate(0 0.08)' }));
-      g.appendChild(el('path', { class: 'body' }));
-      g.appendChild(el('path', { class: 'tip' }));
-      g.appendChild(el('path', { class: 'shine', transform: 'translate(-0.05 -0.06)' }));
+      g.style.setProperty('--trace', colorOf(i).hex);
+      ['halo', 'glow', 'wire', 'tip'].forEach((c) => g.appendChild(el('path', { class: c })));
+      g.appendChild(el('circle', { class: 'pad', r: 0.14 }));
       svg.appendChild(g);
       return g;
     });
-    // Arrows already gone (a resumed run) are not drawn.
+    // Traces already gone (a resumed run) are not drawn.
     arrowEls.forEach((g, i) => {
       if (game.gone[i]) {
         g.remove();
         arrowEls[i] = null;
       } else drawArrow(i, 0);
     });
-    cursorEl = el('rect', { class: 'cursor', width: 0.9, height: 0.9, rx: 0.22, visibility: 'hidden' });
+    core = buildCore(p);
+    svg.appendChild(core.g);
+    updateCore();
+    cursorEl = el('rect', { class: 'cursor', width: 0.9, height: 0.9, visibility: 'hidden' });
     svg.appendChild(cursorEl);
     board.appendChild(tray);
     board.appendChild(svg);
@@ -572,22 +766,31 @@
     const p = game.puzzle;
     const W = board.clientWidth;
     const H = board.clientHeight;
-    const PAD = 0.4;
-    cell = Math.max(8, Math.min(64, W / (p.w + PAD * 2), H / (p.h + PAD * 2)));
-    const tw = (p.w + PAD * 2) * cell;
-    const th = (p.h + PAD * 2) * cell;
+    const side = RIM + 0.45;
+    const topPad = RIM + CORE_R * 1.32 + 0.35;
+    cell = Math.max(8, Math.min(60, W / (p.w + side * 2), H / (p.h + side + topPad)));
+    const tw = (p.w + side * 2) * cell;
+    const th = (p.h + side + topPad) * cell;
     const left = (W - tw) / 2;
     const top = (H - th) / 2;
-    Object.assign(tray.style, { left: left + 'px', top: top + 'px', width: tw + 'px', height: th + 'px', borderRadius: Math.min(26, cell * 0.7) + 'px' });
-    Object.assign(svg.style, { left: left + PAD * cell + 'px', top: top + PAD * cell + 'px', width: p.w * cell + 'px', height: p.h * cell + 'px' });
+    Object.assign(tray.style, { left: left + 'px', top: top + 'px', width: tw + 'px', height: th + 'px' });
+    tray.style.clipPath = 'polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px)';
+    Object.assign(svg.style, { left: left + side * cell + 'px', top: top + topPad * cell + 'px', width: p.w * cell + 'px', height: p.h * cell + 'px' });
+    // The core keeps a steady size on screen: never tiny on a big board,
+    // never huge on a small one.
+    const scale = Math.min(26, Math.max(15, cell * 0.5)) / cell;
+    core.g.setAttribute('transform', 'translate(' + p.w / 2 + ' ' + -RIM + ') scale(' + fmt(scale) + ')');
   }
 
   // ---------- Animation ----------
 
   const easeIn = (t) => t * t;
   const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+  // Speeds up over the first quarter, then runs at a steady speed.
+  const LAUNCH = 0.25;
+  const launch = (t) => (t < LAUNCH ? (t * t) / (2 * LAUNCH) : t - LAUNCH / 2) / (1 - LAUNCH / 2);
 
-  // Slides arrow i's window from one spot on its track to another.
+  // Slides trace i from one spot on its route to another.
   function slide(i, from, to, ms, ease) {
     const epoch = game.epoch;
     return new Promise((resolve) => {
@@ -608,25 +811,21 @@
     });
   }
 
-  function wait(ms) {
-    return new Promise((r) => setTimeout(r, reduceMotion ? 0 : ms));
-  }
-
-  // A burst of little stars where a bump lands.
-  function puff(point) {
+  // A burst of sparks where a short lands.
+  function sparks(point) {
     if (reduceMotion) return;
     const r = svg.getBoundingClientRect();
     const b = board.getBoundingClientRect();
     const x = r.left - b.left + point[0] * cell;
     const y = r.top - b.top + point[1] * cell;
-    for (let k = 0; k < 5; k++) {
+    for (let k = 0; k < 6; k++) {
       const s = document.createElement('i');
       s.className = 'puff';
       const ang = Math.random() * Math.PI * 2;
-      const dist = cell * (0.4 + Math.random() * 0.4);
+      const dist = cell * (0.35 + Math.random() * 0.5);
       s.style.cssText = 'left:' + x + 'px;top:' + y + 'px;--dx:' + Math.cos(ang) * dist + 'px;--dy:' + Math.sin(ang) * dist + 'px';
       board.appendChild(s);
-      setTimeout(() => s.remove(), 520);
+      setTimeout(() => s.remove(), 480);
     }
   }
 
@@ -636,47 +835,39 @@
     if (!game.puzzle || game.done || i < 0 || game.gone[i] || game.busy.has(i)) return;
     const result = Core.probe(game.puzzle, i, game.gone);
     if (result.free) leave(i);
-    else bump(i, result);
+    else short(i, result);
   }
 
   async function leave(i) {
     game.gone[i] = true;
     if (game.hinted === i) clearHint();
-    if (hovered === i) hovered = -1;
+    if (hovered === i) setHover(-1);
     const total = game.puzzle.arrows.length;
     const remaining = left();
-    Sound.slide(1 - remaining / total);
-    if (remaining === 0) say('All clear!');
-    else if (remaining === 1) say('Just one left!');
+    Sound.unzip(paths[i].len);
+    if (remaining === 1) say('Just one left!');
     else if (remaining === Math.floor(total / 2) && total >= 8) say('Halfway there!');
-    else if (Math.random() < 0.18) say(pickFrom(CLEARS));
+    else if (remaining > 0 && Math.random() < 0.18) say(pickFrom(CLEARS));
     updateHud();
     saveRun();
     const g = arrowEls[i];
-    const { lane, len } = paths[i];
-    const dist = lane + len + 1;
-    game.exiting++;
-    const epoch = game.epoch;
-    await slide(i, 0, dist, 150 + dist * 26, easeIn);
-    if (epoch !== game.epoch) return;
-    game.exiting--;
+    const color = colorOf(i).hex;
+    const dist = paths[i].total;
+    const ok = await slide(i, 0, dist, 260 + dist * 34, launch);
+    if (!ok) return;
     if (g) g.remove();
     arrowEls[i] = null;
-    if (remaining === 0 && game.exiting === 0) win();
-    else if (remaining === 0) whenExited(win);
+    game.absorbed++;
+    updateCore();
+    const allIn = game.absorbed === total;
+    coreBurst(color, allIn);
+    if (allIn) {
+      Sound.overload();
+      win();
+    } else Sound.absorb(game.absorbed / total);
   }
 
-  function whenExited(fn) {
-    const epoch = game.epoch;
-    const check = () => {
-      if (epoch !== game.epoch) return;
-      if (game.exiting === 0) fn();
-      else setTimeout(check, 50);
-    };
-    check();
-  }
-
-  async function bump(i, result) {
+  async function short(i, result) {
     game.bumps++;
     game.busy.add(i);
     const counter = $('bumpCount').parentElement;
@@ -685,31 +876,30 @@
     counter.classList.add('bumped');
     updateHud();
     saveRun();
-    say('Bonk! The ' + nameOf(result.by) + ' arrow is in the way.', true);
+    say('Short circuit! The ' + colorOf(result.by).name + ' trace is in the way.', true);
     const g = arrowEls[i];
     const reach = result.steps + 0.18;
     const epoch = game.epoch;
     await slide(i, 0, reach, 70 + result.steps * 38, easeIn);
     if (epoch !== game.epoch) return;
-    Sound.bump();
-    if (g) g.classList.add('bumping');
+    Sound.short();
+    if (g) g.classList.add('shorting');
     const blocker = arrowEls[result.by];
     if (blocker) {
-      blocker.classList.remove('wobble');
-      void blocker.getBoundingClientRect();
-      blocker.classList.add('wobble');
-      setTimeout(() => blocker.classList.remove('wobble'), 420);
+      blocker.classList.add('zapped');
+      setTimeout(() => blocker.classList.remove('zapped'), 260);
     }
-    puff(shapeAt(i, reach + 0.3).head);
-    await slide(i, reach, 0, 170 + result.steps * 22, easeOut);
-    if (g) g.classList.remove('bumping');
+    const contact = shapeAt(i, reach);
+    if (contact) sparks(contact.head);
+    await slide(i, reach, 0, 190 + result.steps * 22, easeOut);
+    if (g) g.classList.remove('shorting');
     game.busy.delete(i);
   }
 
   // ---------- Tapping and pointing ----------
 
-  // The arrow under a point on the board, in cells. A tap a little off an
-  // arrow (in an empty cell or just past the edge) still finds it.
+  // The trace under a point on the board, in cells. A tap a little off a
+  // trace (in an empty cell or just past the edge) still finds it.
   function arrowAt(x, y) {
     const p = game.puzzle;
     const occ = Core.occupancy(p, game.gone);
@@ -766,7 +956,7 @@
   }
 
   // Keyboard play: the arrow keys move a box around the board and Enter or
-  // Space taps the arrow inside it.
+  // Space taps the trace inside it.
   function drawCursor() {
     if (!cursorEl) return;
     const c = game.cursor;
@@ -799,7 +989,7 @@
 
   // ---------- Tools ----------
 
-  // The most useful free arrow: the one holding up the most others.
+  // The most useful free trace: the one holding up the most others.
   function bestHint() {
     const free = Core.freeArrows(game.puzzle, game.gone);
     let best = free[0];
@@ -829,10 +1019,10 @@
   }
 
   function hint() {
-    if (!game.puzzle || game.done) return;
-    // Asking again before the hinted arrow is gone repeats it for free.
+    if (!game.puzzle || game.done || left() === 0) return;
+    // Asking again before the hinted trace is gone repeats it for free.
     if (game.hinted >= 0 && !game.gone[game.hinted]) {
-      say('Try the glowing ' + nameOf(game.hinted) + ' arrow!');
+      say('Try the glowing ' + colorOf(game.hinted).name + ' trace!');
       return;
     }
     if (game.hintsLeft <= 0) {
@@ -845,7 +1035,7 @@
     game.helped = true;
     showHint(i);
     Sound.hint();
-    say('Try the glowing ' + nameOf(i) + ' arrow!');
+    say('Try the glowing ' + colorOf(i).name + ' trace!');
     updateHud();
     saveRun();
   }
@@ -857,7 +1047,7 @@
     buildBoard();
     updateHud();
     Sound.whoosh();
-    say('Fresh start! Every arrow is back.');
+    say('Fresh start! Every trace is back.');
     if (game.mode === 'level' && game.level === 1) showHint(bestHint(), true);
     saveRun();
   }
@@ -879,38 +1069,39 @@
       save();
     }
     updateHud();
-    say(stars === 3 ? 'A perfect clear! Brilliant!' : 'All clear! Great work!');
+    say(stars === 3 ? 'Core fully charged. Not a single short!' : 'Core fully charged! Great work!');
     const epoch = game.epoch;
     setTimeout(() => {
       if (!game.done || epoch !== game.epoch || screen !== 'play') return;
       Sound.win();
       confetti();
       showWin(stars);
-    }, reduceMotion ? 100 : 350);
+    }, reduceMotion ? 100 : 750);
   }
 
   function showWin(stars) {
     const isLevel = game.mode === 'level';
     const n = game.puzzle.arrows.length;
-    $('winSet').textContent = isLevel ? Core.setOf(game.level).name : 'Your puzzle';
-    $('winTitle').textContent = isLevel ? 'Level ' + game.level + ' cleared!' : 'Puzzle cleared!';
+    $('winSet').textContent = isLevel ? Core.setOf(game.level).name : 'Your board';
+    $('winTitle').textContent = isLevel ? 'Level ' + game.level + ' cleared!' : 'Board cleared!';
     $('winStars').querySelectorAll('i').forEach((s, i) => s.classList.toggle('on', i < stars));
     $('winStars').setAttribute('aria-label', stars + (stars === 1 ? ' star' : ' stars'));
     const b = game.bumps;
-    $('winStats').textContent = (b === 0 ? 'No bumps!' : b + (b === 1 ? ' bump' : ' bumps')) + (game.helped ? ' · hint used' : '');
+    $('winStats').textContent = (b === 0 ? 'No shorts!' : b + (b === 1 ? ' short' : ' shorts')) + (game.helped ? ' · hint used' : '');
     let note;
-    if (stars === 3) note = n + ' arrows, every tap a clear path.';
-    else if (game.helped && b <= Core.bumpAllowance(n)) note = '3 stars: no bumps and no hints.';
-    else note = '3 stars: no bumps. 2 stars: ' + Core.bumpAllowance(n) + ' bumps or fewer.';
+    if (stars === 3) note = n + ' traces, every one routed clean.';
+    else if (game.helped && b <= Core.bumpAllowance(n)) note = '3 stars: no shorts and no hints.';
+    else note = '3 stars: no shorts. 2 stars: ' + Core.bumpAllowance(n) + ' shorts or fewer.';
     $('winNote').textContent = note;
     const code = $('winCode');
     code.hidden = isLevel;
-    if (!isLevel) code.innerHTML = 'Puzzle code <b>' + Core.codeOf(game.custom) + '</b> · share it so friends can play this one';
-    $('nextBtn').querySelector('.big-label').textContent = isLevel ? 'Next level' : 'Make another';
+    if (!isLevel) code.innerHTML = 'Board code <b>' + Core.codeOf(game.custom) + '</b> · share it so friends can play this one';
+    $('nextBtn').querySelector('.big-label').textContent = isLevel ? 'Next level' : 'Build another';
     $('win').hidden = false;
     $('nextBtn').focus({ preventScroll: true });
   }
 
+  // A shower of sparks in the set's colors.
   function confetti() {
     if (reduceMotion) return;
     const canvas = $('confetti');
@@ -921,40 +1112,38 @@
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const bits = Array.from({ length: 140 }, () => ({
+    const colors = game.palette.map((c) => COLORS[c]).concat(['#ffffff']);
+    const bits = Array.from({ length: 130 }, () => ({
       x: W / 2 + (Math.random() - 0.5) * W * 0.3,
       y: H * 0.45,
       vx: (Math.random() - 0.5) * 12,
       vy: -6 - Math.random() * 10,
-      size: 6 + Math.random() * 7,
-      spin: Math.random() * 6,
-      vs: (Math.random() - 0.5) * 0.4,
-      color: PALETTE[Math.floor(Math.random() * PALETTE.length)],
-      round: Math.random() < 0.35,
+      size: 2 + Math.random() * 3,
+      color: colors[Math.floor(Math.random() * colors.length)],
     }));
     const start = performance.now();
     function frame(now) {
       const t = now - start;
       ctx.clearRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'lighter';
       bits.forEach((b) => {
-        b.vy += 0.32;
+        b.vy += 0.3;
         b.vx *= 0.99;
+        const px = b.x;
+        const py = b.y;
         b.x += b.vx;
         b.y += b.vy;
-        b.spin += b.vs;
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, 1 - t / 2800);
-        ctx.translate(b.x, b.y);
-        ctx.rotate(b.spin);
-        ctx.fillStyle = b.color;
-        if (b.round) {
-          ctx.beginPath();
-          ctx.arc(0, 0, b.size / 2, 0, Math.PI * 2);
-          ctx.fill();
-        } else ctx.fillRect(-b.size / 2, -b.size / 4, b.size, b.size / 2);
-        ctx.restore();
+        ctx.globalAlpha = Math.max(0, 1 - t / 2400);
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.size;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
       });
-      if (t < 2800) requestAnimationFrame(frame);
+      ctx.globalCompositeOperation = 'source-over';
+      if (t < 2400) requestAnimationFrame(frame);
       else ctx.clearRect(0, 0, W, H);
     }
     requestAnimationFrame(frame);
@@ -986,7 +1175,7 @@
     $('resumeBtn').addEventListener('click', () => saved.run && resumeRun(saved.run));
 
     // Every button and switch outside the board makes a sound: Play and
-    // Fold it get a jingle, the rest a tap. Moving the mouse onto anything
+    // Build it get a jingle, the rest a tap. Moving the mouse onto anything
     // clickable pops. Touch screens have no hover, so that is mouse only.
     let hoveredControl = null;
     document.addEventListener('pointerover', (e) => {
@@ -1098,6 +1287,11 @@
     };
     if (window.ResizeObserver) new ResizeObserver(relayout).observe(board);
     else window.addEventListener('resize', relayout);
+    let wireTimer = 0;
+    window.addEventListener('resize', () => {
+      clearTimeout(wireTimer);
+      wireTimer = setTimeout(drawWires, 200);
+    });
   }
 
   // ---------- Pause and resume ----------
@@ -1120,7 +1314,7 @@
   /*
    * The current run is saved after every tap, so leaving for the home
    * screen, the level map, or another tab (or closing the page) loses
-   * nothing. Winning clears it; starting a different level or a new puzzle
+   * nothing. Winning clears it; starting a different level or a new board
    * replaces it.
    */
   function saveRun() {
@@ -1137,14 +1331,17 @@
 
   function resumeRun(g) {
     Object.assign(game, { mode: g.mode, level: g.level, custom: g.custom });
-    useSet(g.mode === 'level' ? Core.setOf(g.level).index : 5);
+    const setIndex = g.mode === 'level' ? Core.setOf(g.level).index : CUSTOM_PALETTE;
     show('play');
-    $('setName').textContent = g.mode === 'level' ? Core.setOf(g.level).name : 'Your puzzle';
+    useSet(setIndex);
+    game.palette = paletteOf(setIndex);
+    $('setName').textContent = g.mode === 'level' ? Core.setOf(g.level).name : 'Your board';
     $('levelTitle').textContent = g.mode === 'level' ? 'Level ' + g.level : Core.codeOf(g.custom);
     game.puzzle = g.puzzle;
     resetState();
     (g.gone || []).forEach((i) => (game.gone[i] = true));
     Object.assign(game, {
+      absorbed: (g.gone || []).length,
       bumps: g.bumps || 0,
       hintsLeft: g.hintsLeft == null ? Core.HINTS : g.hintsLeft,
       helped: !!g.helped,
@@ -1158,6 +1355,7 @@
   }
 
   function start() {
+    drawWires();
     wire();
     setSound(saved.sound);
     show('home');
