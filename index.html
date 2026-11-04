@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Unfold</title>
+<meta name="description" content="Tap the bent arrows to send them off the board. Clear the board without a bump. Puzzles for all ages.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="css/style.css?v=fca84f4a1f">
+</head>
+<body>
+<!-- page:start -->
+<div class="wall" aria-hidden="true">
+  <div class="floaters"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+</div>
+
+<main id="app">
+  <!-- Home -->
+  <section id="home" class="screen home">
+    <div class="home-inner">
+      <svg class="logo-art" viewBox="0 0 160 110" aria-hidden="true">
+        <g class="logo-arrow" style="--c:var(--c0)"><path d="M18 92V60h22V30"/><path class="tip" d="M30 32 40 16l10 16z"/></g>
+        <g class="logo-arrow a2" style="--c:var(--c7)"><path d="M62 98V74h36V44"/><path class="tip" d="M88 46 98 30l10 16z"/></g>
+        <g class="logo-arrow a3" style="--c:var(--c2)"><path d="M120 96h22V70h-22V48"/><path class="tip" d="M110 50 120 34l10 16z"/></g>
+      </svg>
+      <h1 class="logo">Unfold</h1>
+      <p class="tagline">Tap an arrow to send it off the board. Clear them all!</p>
+      <div class="home-actions">
+        <button id="resumeBtn" class="big-btn primary" type="button" hidden>
+          <span class="big-label">Resume</span>
+          <span id="resumeSub" class="big-sub">Level 1</span>
+        </button>
+        <button id="playBtn" class="big-btn primary" type="button">
+          <span class="big-label">Play</span>
+          <span id="playSub" class="big-sub">Level 1</span>
+        </button>
+        <button id="levelsBtn" class="big-btn" type="button"><span class="big-label">Levels</span></button>
+        <button id="customBtn" class="big-btn" type="button"><span class="big-label">Make your own</span></button>
+      </div>
+      <div class="home-toggles">
+        <label class="toggle"><input id="soundToggle" type="checkbox" checked> <span>Sound</span></label>
+      </div>
+      <p class="rules"><b>How to play:</b> tap an arrow. If nothing is in front of its head, it slides off the board. If something is, it <b>bumps</b> and stays put. Clear the board with no bumps for 3 stars.</p>
+    </div>
+  </section>
+
+  <!-- Level map -->
+  <section id="levels" class="screen" hidden>
+    <header class="screen-head">
+      <button class="icon-btn back" type="button" data-go="home" aria-label="Back to home"></button>
+      <h2>Choose a level</h2>
+    </header>
+    <form id="jumpForm" class="jump-form">
+      <label for="jumpInput">Go to level</label>
+      <input id="jumpInput" type="number" inputmode="numeric" min="1" max="9999" placeholder="47">
+      <button class="small-btn" type="submit">Go</button>
+    </form>
+    <div id="setList" class="lab-list"></div>
+  </section>
+
+  <!-- Custom puzzle -->
+  <section id="custom" class="screen" hidden>
+    <header class="screen-head">
+      <button class="icon-btn back" type="button" data-go="home" aria-label="Back to home"></button>
+      <h2>Make your own</h2>
+    </header>
+    <div class="custom-card">
+      <div class="preset-panel">
+        <span class="panel-label">Presets</span>
+        <div id="presets" class="presets"></div>
+      </div>
+      <div class="settings-head">
+        <span class="panel-label">Settings</span>
+        <span id="customBadge" class="custom-badge" hidden>Custom</span>
+      </div>
+      <div class="stepper" data-key="w">
+        <span class="step-label">Width</span>
+        <button class="step-btn" type="button" data-step="-1" aria-label="Narrower board">−</button>
+        <output id="wOut" class="step-value">8</output>
+        <button class="step-btn" type="button" data-step="1" aria-label="Wider board">+</button>
+      </div>
+      <div class="stepper" data-key="h">
+        <span class="step-label">Height</span>
+        <button class="step-btn" type="button" data-step="-1" aria-label="Shorter board">−</button>
+        <output id="hOut" class="step-value">10</output>
+        <button class="step-btn" type="button" data-step="1" aria-label="Taller board">+</button>
+      </div>
+      <div class="setting-row" id="densityRow">
+        <span class="step-label" id="densityLabel">Fill</span>
+        <div class="trick" role="radiogroup" aria-labelledby="densityLabel" data-key="density"></div>
+      </div>
+      <div class="setting-row" id="lengthRow">
+        <span class="step-label" id="lengthLabel">Arrows</span>
+        <div class="trick" role="radiogroup" aria-labelledby="lengthLabel" data-key="length"></div>
+      </div>
+      <div class="setting-row" id="bendRow">
+        <span class="step-label" id="bendLabel">Bends</span>
+        <div class="trick" role="radiogroup" aria-labelledby="bendLabel" data-key="bend"></div>
+      </div>
+      <button id="mixBtn" class="big-btn primary" type="button"><span class="big-label">Fold it!</span></button>
+      <form id="codeForm" class="code-form">
+        <label for="codeInput">Have a puzzle code?</label>
+        <div class="code-row">
+          <input id="codeInput" inputmode="numeric" autocomplete="off" placeholder="0810121-4821" maxlength="14">
+          <button class="small-btn" type="submit">Go</button>
+        </div>
+        <p id="codeError" class="note bad" hidden></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- Playing -->
+  <section id="play" class="screen play" hidden>
+    <header class="hud">
+      <button id="homeBtn" class="icon-btn" type="button" aria-label="Menu"></button>
+      <div class="hud-title">
+        <span id="setName" class="lab-pill">Ribbon</span>
+        <h1 id="levelTitle">Level 1</h1>
+      </div>
+      <div class="hud-stats" aria-live="polite">
+        <div class="hud-moves"><span>Left</span><b id="leftCount">0</b></div>
+        <div class="hud-moves"><span>Bumps</span><b id="bumpCount">0</b></div>
+      </div>
+      <button id="soundBtn" class="icon-btn" type="button" aria-label="Sound on" aria-pressed="true"></button>
+    </header>
+    <div class="robot-line">
+      <svg class="robot" viewBox="0 0 64 64" aria-hidden="true">
+        <line x1="32" y1="12" x2="32" y2="4" stroke="#56608F" stroke-width="3" stroke-linecap="round"/>
+        <circle class="antenna" cx="32" cy="5" r="4.5" fill="#FF8A3D"/>
+        <rect x="8" y="12" width="48" height="40" rx="14" fill="#fff" stroke="#9FB3E0" stroke-width="3"/>
+        <rect x="14" y="19" width="36" height="25" rx="9" fill="#26305E"/>
+        <g class="eyes"><circle cx="24" cy="30" r="4.5" fill="#5CF2E8"/><circle cx="40" cy="30" r="4.5" fill="#5CF2E8"/></g>
+        <path d="M26 38q6 4 12 0" stroke="#5CF2E8" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <circle cx="13" cy="42" r="3" fill="#FFB3C7"/><circle cx="51" cy="42" r="3" fill="#FFB3C7"/>
+        <rect x="4" y="26" width="5" height="12" rx="2.5" fill="#9FB3E0"/><rect x="55" y="26" width="5" height="12" rx="2.5" fill="#9FB3E0"/>
+      </svg>
+      <p id="say" class="speech" aria-live="polite">Let's unfold this!</p>
+    </div>
+    <div id="board" class="board" role="application" aria-label="Arrow board" tabindex="0"></div>
+    <nav class="toolbar" aria-label="Tools">
+      <button id="restartBtn" class="tool" type="button" style="--tool:var(--orange)"><span class="tool-icon"></span><span class="tool-label">Restart</span></button>
+      <button id="hintBtn" class="tool" type="button" style="--tool:var(--sun)"><span class="tool-icon"></span><span class="tool-label">Hint</span><span class="badge" id="hintBadge"></span></button>
+    </nav>
+  </section>
+</main>
+
+<div id="win" class="overlay" hidden>
+  <div class="win-card" role="dialog" aria-modal="true" aria-labelledby="winTitle">
+    <button id="winClose" class="win-close" type="button" aria-label="Close"></button>
+    <p class="win-eyebrow" id="winSet">Ribbon</p>
+    <h2 id="winTitle">Level cleared!</h2>
+    <div class="stars" id="winStars" aria-label="3 stars"><i></i><i></i><i></i></div>
+    <p id="winStats" class="win-stats">No bumps!</p>
+    <p id="winNote" class="win-note"></p>
+    <p id="winCode" class="win-code" hidden></p>
+    <div class="win-actions">
+      <button id="nextBtn" class="big-btn primary" type="button"><span class="big-label">Next level</span></button>
+      <div class="win-row">
+        <button id="replayBtn" class="small-btn alt" type="button">Play again</button>
+        <button id="winHome" class="small-btn alt" type="button">Home</button>
+      </div>
+    </div>
+  </div>
+</div>
+<canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
+
+<script src="js/core.js?v=fca84f4a1f"></script>
+<script src="js/sound.js?v=fca84f4a1f"></script>
+<script src="js/game.js?v=fca84f4a1f"></script>
+<!-- page:end -->
+</body>
+</html>
