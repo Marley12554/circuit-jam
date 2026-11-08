@@ -179,6 +179,20 @@
       tone(85, 0, 0.22, { type: 'sawtooth', gain: 0.07, to: 70 });
       tone(170, 0, 0.18, { type: 'square', gain: 0.03, to: 130 });
     },
+    // A cube face cleared: a bright power-up chord that rings out, with a
+    // thump under it and a sweep of static over it. Each face sounds a
+    // step higher than the last.
+    faceClear(count) {
+      const step = Math.pow(2, ((Math.max(1, count) - 1) * 2) / 12);
+      const root = 392 * step;
+      [1, 1.26, 1.5, 2].forEach((m, i) => {
+        tone(root * m, i * 0.06, 0.6, { type: 'triangle', gain: 0.11 });
+        tone(root * m * 1.004, i * 0.06, 0.6, { type: 'sine', gain: 0.05 });
+      });
+      tone(root * 4, 0.24, 0.5, { gain: 0.04, to: root * 4.2 });
+      tone(140, 0, 0.25, { to: 50, gain: 0.35 });
+      noise(0, 0.35, { freq: 1500, to: 9000, q: 0.8, gain: 0.06 });
+    },
     // The core filling up on the last trace: the landing, then a surge
     // that climbs and bursts.
     overload() {

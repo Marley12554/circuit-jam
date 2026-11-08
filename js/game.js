@@ -100,6 +100,7 @@
       stars: {},
       best: {},
       sound: true,
+      vibrate: true,
       custom: { shape: 'flat', w: 8, h: 10, n: 5, density: 1, length: 1, bend: 1 },
     };
   }
@@ -1425,6 +1426,7 @@
       save();
     }
     updateHud();
+    buzz([30, 50, 30, 50, 120]);
     say(stars === 3 ? 'Core fully charged. Not a single short!' : 'Core fully charged! Great work!');
     const epoch = game.epoch;
     setTimeout(() => {
@@ -1507,6 +1509,26 @@
 
   // ---------- Settings ----------
 
+  // A short buzz on phones that support it (not iPhones: Safari doesn't
+  // let pages vibrate). Patterns are on/off times in milliseconds.
+  const canVibrate = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+
+  function buzz(pattern) {
+    if (!canVibrate || !saved.vibrate) return;
+    try {
+      navigator.vibrate(pattern);
+    } catch (e) {
+      /* the page isn't allowed to vibrate */
+    }
+  }
+
+  function setVibrate(on) {
+    saved.vibrate = on;
+    save();
+    $('vibrateToggle').checked = on;
+    if (on) buzz(15);
+  }
+
   function setSound(on) {
     saved.sound = on;
     save();
@@ -1565,6 +1587,9 @@
     });
     $('soundBtn').addEventListener('click', () => setSound(!saved.sound));
     $('soundToggle').addEventListener('change', (e) => setSound(e.target.checked));
+    $('vibrateToggle').addEventListener('change', (e) => setVibrate(e.target.checked));
+    $('vibrateToggle').closest('label').hidden = !canVibrate;
+    $('vibrateToggle').checked = saved.vibrate !== false;
 
     $('restartBtn').addEventListener('click', restart);
     $('hintBtn').addEventListener('click', hint);
@@ -1728,6 +1753,9 @@
     hover: -1,
     meterFlash: 0,
     meterColor: '#ffffff',
+    faceTraces: [],
+    cleared: new Set(),
+    faceFx: new Map(), // face -> when it was cleared
     raf: 0,
     last: 0,
   };
@@ -1774,6 +1802,13 @@
     cube.routes = p.arrows.map((a, i) => cubeRoute(i));
     blockedBy = Core.blockers(p);
     cube.anims.clear();
+    // Which traces touch each face. A face that starts empty, or that a
+    // resumed run already cleared, counts as cleared without fanfare.
+    cube.faceTraces = [[], [], [], [], [], []];
+    p.arrows.forEach((a, i) => new Set(a.cells.map((c) => c[0])).forEach((f) => cube.faceTraces[f].push(i)));
+    cube.cleared = new Set();
+    cube.faceFx.clear();
+    for (let f = 0; f < 6; f++) if (cube.faceTraces[f].every((i) => game.gone[i])) cube.cleared.add(f);
     cube.zaps.clear();
     cube.particles = [];
     cube.hover = -1;
@@ -2022,6 +2057,7 @@
           ctx.stroke();
         }
       }
+      if (cube.cleared.has(f)) drawCleared(f, now, corners);
     }
     // Traces at rest, then moving ones on top.
     const lw = Math.max(1.5, cube.s * 0.12);
@@ -2125,6 +2161,105 @@
     return 'rgb(' + c.join(',') + ')';
   }
 
+  /*
+   * A cleared face stays softly powered up: its tiles glow in the set's
+   * color. Just after it clears, a wave of light sweeps out from its
+   * middle, its outline flashes, and FACE CLEAR glows on it and fades.
+   */
+  const FACE_FX_MS = 1100;
+
+  function labRgb() {
+    const hex = (getComputedStyle(document.documentElement).getPropertyValue('--lab').trim() || '#2fe6b4').replace('#', '');
+    const v = parseInt(hex.length === 3 ? hex.replace(/./g, '$&$&') : hex, 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+
+  function drawCleared(f, now, corners) {
+    const ctx = cube.ctx;
+    const n = game.puzzle.n;
+    const [r, g, b] = labRgb();
+    const start = cube.faceFx.get(f);
+    const t = start == null || reduceMotion ? 1 : Math.min(1, (now - start) / FACE_FX_MS);
+    const live = t < 1;
+    const front = 0.4 + 0.6 * Math.min(1, faceFacing(f) / 0.6);
+    for (let v = 0; v < n; v++) {
+      for (let u = 0; u < n; u++) {
+        let a = 0.13;
+        if (live) {
+          // The wave: brightest where its front is now, fading as it goes.
+          const dist = Math.hypot(u + 0.5 - n / 2, v + 0.5 - n / 2) / (n * 0.71);
+          const front2 = t * 1.25;
+          a += 0.75 * Math.exp(-Math.pow((dist - front2) / 0.12, 2)) * (1 - t * 0.6);
+        }
+        const q = [facePoint(f, u + 0.08, v + 0.08), facePoint(f, u + 0.92, v + 0.08), facePoint(f, u + 0.92, v + 0.92), facePoint(f, u + 0.08, v + 0.92)].map(project);
+        ctx.beginPath();
+        ctx.moveTo(q[0][0], q[0][1]);
+        ctx.lineTo(q[1][0], q[1][1]);
+        ctx.lineTo(q[2][0], q[2][1]);
+        ctx.lineTo(q[3][0], q[3][1]);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (a * front).toFixed(3) + ')';
+        ctx.fill();
+      }
+    }
+    // The outline: a bright flash that settles into a steady glow.
+    ctx.beginPath();
+    corners.forEach((c, k) => (k ? ctx.lineTo(c[0], c[1]) : ctx.moveTo(c[0], c[1])));
+    ctx.closePath();
+    ctx.strokeStyle = live ? 'rgba(255,255,255,' + (1 - t).toFixed(2) + ')' : 'rgba(' + r + ',' + g + ',' + b + ',0.7)';
+    ctx.lineWidth = live ? 2 + 7 * (1 - t) : 2;
+    ctx.stroke();
+    if (live) {
+      const c = project(facePoint(f, n / 2, n / 2));
+      const size = Math.max(14, Math.min(34, n * cube.s * 0.11));
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (1 - t) * 2.2) * front;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+      ctx.shadowBlur = 16;
+      ctx.font = '800 ' + Math.round(size) + "px Oxanium, 'Chakra Petch', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('FACE CLEAR', c[0], c[1] - t * 18);
+      ctx.restore();
+    }
+  }
+
+  // Whether every trace touching a face has fully left it.
+  function faceDone(f) {
+    return cube.faceTraces[f].every((i) => {
+      if (!game.gone[i]) return false;
+      const anim = cube.anims.get(i);
+      return !(anim && anim.mode === 'leave' && !anim.counted);
+    });
+  }
+
+  // After trace i leaves, check the faces it touched.
+  function cubeCheckFaces(i) {
+    new Set(game.puzzle.arrows[i].cells.map((c) => c[0])).forEach((f) => {
+      if (!cube.cleared.has(f) && faceDone(f)) faceCleared(f);
+    });
+  }
+
+  function faceCleared(f) {
+    cube.cleared.add(f);
+    const count = cube.cleared.size;
+    const now = performance.now();
+    cube.faceFx.set(f, now);
+    if (shown(f)) {
+      const c = project(facePoint(f, game.puzzle.n / 2, game.puzzle.n / 2));
+      const [r, g, b] = labRgb();
+      burst(c[0], c[1], 'rgb(' + r + ',' + g + ',' + b + ')', 40, 0.45);
+    }
+    // The last face is the win, which has its own sound and buzz.
+    if (count < 6 && !game.done) {
+      Sound.faceClear(count);
+      buzz([14, 45, 14, 45, 40]);
+      say('Face cleared! ' + count + ' of 6.');
+    }
+    cubeKick();
+  }
+
   // The charge meter above the cube: a ring of cells that light up as
   // traces leave, around a heart that brightens.
   function cubeDrawMeter(now) {
@@ -2174,6 +2309,17 @@
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+    // Six pips beside the meter, one for each face cleared.
+    const cleared = cube.cleared.size;
+    for (let k = 0; k < 6; k++) {
+      const side = k < 3 ? -1 : 1;
+      const px = x + side * (R + 14 + (k % 3) * 11) - 4;
+      const fresh = k === cleared - 1 && Array.from(cube.faceFx.values()).some((t) => now - t < FACE_FX_MS);
+      ctx.fillStyle = 'rgba(10, 31, 36, 0.9)';
+      ctx.fillRect(px - 2, y - 6, 12, 12);
+      ctx.fillStyle = k < cleared ? (fresh ? '#ffffff' : lab) : 'rgba(255,255,255,0.12)';
+      ctx.fillRect(px, y - 4, 8, 8);
+    }
   }
 
   function burst(x, y, color, count, speed) {
@@ -2235,6 +2381,7 @@
           const out = project(routePoint(r, r.edgeAt + 0.4));
           if (shown(r.face)) burst(out[0], out[1], colorOf(i).hex, 16, 0.32);
           absorb(colorOf(i).hex);
+          cubeCheckFaces(i);
         }
         if (t >= 1) {
           const tail = project(routePoint(r, anim.s + r.len - 1));
@@ -2276,6 +2423,7 @@
       });
     }
     if (game.hinted >= 0 || now - cube.meterFlash < 450) active = true;
+    cube.faceFx.forEach((t) => now - t < FACE_FX_MS && (active = true));
     cube.zaps.forEach((t, i) => (now - t < 280 ? (active = true) : cube.zaps.delete(i)));
     cubeDraw(now);
     if (active) cubeKick();
@@ -2509,6 +2657,7 @@
   // screen, if any of it faces you.
   window.__unfoldTest = {
     cubeZoom: () => cube.zoom,
+    facesCleared: () => cube.cleared.size,
     turn(dx, dy) {
       cubeTurn(dx, dy);
       cubeDraw(performance.now());

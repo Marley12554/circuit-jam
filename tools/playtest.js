@@ -274,6 +274,46 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.context().close();
   }
 
+  // Clearing a whole small cube: each face counts as cleared once every
+  // trace touching it has left, the drone says so, and the cube is won.
+  {
+    const p = await open({ sound: false, custom: { shape: 'cube', n: 3, w: 8, h: 10, density: 2, length: 1, bend: 1 } });
+    await p.click('#customBtn');
+    await p.click('#mixBtn');
+    await p.waitForFunction(() => { const r = JSON.parse(localStorage.getItem('unfold-v1')).run; return r && r.puzzle.kind === 'cube'; });
+    const faces = () => p.evaluate(() => window.__unfoldTest.facesCleared());
+    const startFaces = await faces();
+    let sawSpeech = false;
+    for (let k = 0; k < 80 && (await p.isHidden('#win')); k++) {
+      const pt = await p.evaluate(() => {
+        const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+        if (!run) return null;
+        const gone = run.puzzle.arrows.map((a, i) => run.gone.includes(i));
+        const i = window.UnfoldCore.freeArrows(run.puzzle, gone)[0];
+        if (i == null) return null;
+        let at = window.__unfoldTest.cubePoint(i);
+        if (!at) {
+          const a = run.puzzle.arrows[i];
+          window.__unfoldTest.showFace(a.cells[a.cells.length - 1][0]);
+          at = window.__unfoldTest.cubePoint(i);
+        }
+        return at;
+      });
+      if (!pt) {
+        await p.waitForTimeout(50);
+        continue;
+      }
+      await p.mouse.click(pt[0], pt[1]);
+      await p.waitForTimeout(60);
+      if (/Face cleared! \d of 6/.test(await p.textContent('#say'))) sawSpeech = true;
+    }
+    await p.waitForSelector('#win:not([hidden])', { timeout: 5000 });
+    check((await faces()) === 6, 'all six faces count as cleared (started with ' + startFaces + ')');
+    check(sawSpeech || startFaces >= 5, 'the drone announces a cleared face');
+    check((await p.textContent('#winTitle')) === 'Cube cleared!', 'clearing every face wins the cube');
+    await p.context().close();
+  }
+
   // The biggest cube: zoom buttons, a two-finger pinch, and a tap while
   // zoomed in.
   {
