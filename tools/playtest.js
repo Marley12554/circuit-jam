@@ -386,14 +386,26 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     const total = await num(p, 'leftCount');
     // Zoom in with the wheel right on a free trace, which keeps it under
     // the pointer, then tap it.
-    const cellOf = () => p.evaluate(() => {
+    // Use the free trace cell nearest the middle of the board, so zooming
+    // in on it never pushes it under the zoom buttons in the corner.
+    const target = await p.evaluate(() => {
       const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
-      const i = window.UnfoldCore.freeArrows(run.puzzle, null)[0];
+      const { w, h } = run.puzzle;
+      let best = null;
+      for (const i of window.UnfoldCore.freeArrows(run.puzzle, null)) {
+        for (const [x, y] of run.puzzle.arrows[i].cells) {
+          const d = Math.hypot(x + 0.5 - w / 2, y + 0.5 - h / 2);
+          if (!best || d < best.d) best = { d, x, y };
+        }
+      }
+      return [best.x, best.y];
+    });
+    const cellOf = () => p.evaluate(([x, y]) => {
+      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
       const svg = document.querySelector('.arrows').getBoundingClientRect();
       const k = svg.width / run.puzzle.w;
-      const [x, y] = run.puzzle.arrows[i].cells[0];
       return [svg.left + (x + 0.5) * k, svg.top + (y + 0.5) * k];
-    });
+    }, target);
     let pt = await cellOf();
     await p.mouse.move(pt[0], pt[1]);
     for (let k = 0; k < 4; k++) await p.mouse.wheel(0, -300);
