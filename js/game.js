@@ -1668,6 +1668,7 @@
    * sparks, and the charge meter above the cube fills.
    */
   const CUBE_TILT = [0.34, 0.4, 1];
+  const EYE = 3.4; // how far the eye is from the cube, in cube widths
   const SPIN = 0.0105; // radians per pixel dragged
 
   const M3 = {
@@ -1841,7 +1842,7 @@
   function project(p) {
     const n = game.puzzle.n;
     const q = M3.apply(cube.R, [p[0] - n / 2, p[1] - n / 2, p[2] - n / 2]);
-    const D = n * 3.4;
+    const D = n * EYE;
     const k = D / (D - q[2]);
     return [cube.cx + q[0] * cube.s * k, cube.cy - q[1] * cube.s * k, k];
   }
@@ -1850,7 +1851,14 @@
     return M3.apply(cube.R, Core.CUBE_FACES[f].n)[2];
   }
 
-  const shown = (f) => faceFacing(f) > 0.02;
+  /*
+   * Whether you can see a face. The cube is drawn in perspective, from an
+   * eye EYE cube-widths from its center, so a face shows only when the eye
+   * is in front of the face's plane: its turned normal must point at least
+   * 1 / (2 * EYE) toward you, not merely sideways. A little margin keeps
+   * faces seen almost edge-on from showing as slivers.
+   */
+  const shown = (f) => faceFacing(f) > 1 / (2 * EYE) + 0.01;
 
   // A point on face f at face coordinates (a across, b down).
   function facePoint(f, a, b) {
@@ -1987,7 +1995,7 @@
     // Faces turned toward you, with their tiles.
     for (let f = 0; f < 6; f++) {
       const facing = faceFacing(f);
-      if (facing <= 0.02) continue;
+      if (!shown(f)) continue;
       const light = 0.55 + 0.45 * facing;
       const corners = [facePoint(f, 0, 0), facePoint(f, n, 0), facePoint(f, n, n), facePoint(f, 0, n)].map(project);
       ctx.beginPath();
@@ -2501,6 +2509,11 @@
   // screen, if any of it faces you.
   window.__unfoldTest = {
     cubeZoom: () => cube.zoom,
+    turn(dx, dy) {
+      cubeTurn(dx, dy);
+      cubeDraw(performance.now());
+    },
+    visibleFaces: () => [0, 1, 2, 3, 4, 5].filter(shown),
     cubePoint(i) {
       if (!isCube() || !cube.canvas) return null;
       const r = cube.canvas.getBoundingClientRect();

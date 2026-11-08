@@ -232,6 +232,21 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
       await p.waitForTimeout(60);
       check((await num(p, 'bumpCount')) === 1, 'a blocked cube trace shorts');
     }
+    // Only faces really turned toward the eye are drawn. Square on to
+    // the front, a small turn still hides the side faces (in perspective
+    // they face away); a bigger one shows one.
+    const faces = await p.evaluate(() => {
+      const T = window.__unfoldTest;
+      T.showFace(0);
+      const square = T.visibleFaces();
+      T.turn(0.09, 0);
+      const small = T.visibleFaces();
+      T.turn(0.3, 0);
+      const big = T.visibleFaces();
+      return { square, small, big };
+    });
+    check(JSON.stringify(faces.square) === '[0]' && JSON.stringify(faces.small) === '[0]', 'faces turned slightly away stay hidden: ' + JSON.stringify(faces));
+    check(faces.big.length === 2 && faces.big.includes(0), 'a bigger turn brings a side face into view');
     // Dragging spins the cube without tapping anything.
     const before = await num(p, 'leftCount');
     const box = await p.locator('.cube-canvas').boundingBox();
