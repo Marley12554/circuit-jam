@@ -58,9 +58,13 @@
   const DY = [-1, 0, 1, 0];
   const DIR_NAMES = ['up', 'right', 'down', 'left'];
 
+  // A cell is [x, y] on a flat board, or [face, u, v] on a cube. Moving
+  // compares the last two coordinates; on a cube both cells must share a face.
   function dirBetween(a, b) {
-    const dx = b[0] - a[0];
-    const dy = b[1] - a[1];
+    if (a.length === 3 && a[0] !== b[0]) return -1;
+    const o = a.length - 2;
+    const dx = b[o] - a[o];
+    const dy = b[o + 1] - a[o + 1];
     for (let d = 0; d < 4; d++) if (DX[d] === dx && DY[d] === dy) return d;
     return -1;
   }
@@ -74,26 +78,180 @@
     return dirBetween(c[c.length - 2], c[c.length - 1]);
   }
 
-  // The lane: every cell straight ahead of the head, out to the edge.
-  function laneOf(puzzle, i) {
-    const arrow = puzzle.arrows[i];
-    const d = dirOf(arrow);
-    const out = [];
-    let [x, y] = headOf(arrow);
-    for (;;) {
-      x += DX[d];
-      y += DY[d];
-      if (x < 0 || y < 0 || x >= puzzle.w || y >= puzzle.h) return out;
-      out.push([x, y]);
+  // ---------- Board shapes ----------
+
+  /*
+   * A geometry numbers a board's cells and knows how they connect, so the
+   * rules and the generator work the same on any shape:
+   *   count            how many cells
+   *   key(cell)        a cell's number; cellOf(k) turns it back
+   *   nb[k * 4 + d]    the neighbor one step in direction d (-1 off the board)
+   *   nd[k * 4 + d]    the direction you face after that step (a step over a
+   *                    cube edge turns you onto the next face)
+   *   lane(k, d)       cells straight ahead on the same face, out to its edge
+   *   side(k, d)       the cell beside k, across the direction of travel
+   *   sameLine(a,b,d)  whether two heads share a row or column on one face
+   */
+  function flatGeometry(w, h) {
+    const count = w * h;
+    const nb = new Int32Array(count * 4).fill(-1);
+    const nd = new Int8Array(count * 4);
+    for (let k = 0; k < count; k++) {
+      const x = k % w;
+      const y = (k - x) / w;
+      for (let d = 0; d < 4; d++) {
+        const nx = x + DX[d];
+        const ny = y + DY[d];
+        if (nx >= 0 && ny >= 0 && nx < w && ny < h) nb[k * 4 + d] = ny * w + nx;
+        nd[k * 4 + d] = d;
+      }
     }
+    return {
+      kind: 'flat',
+      count,
+      nb,
+      nd,
+      key: (c) => c[1] * w + c[0],
+      cellOf: (k) => [k % w, Math.floor(k / w)],
+      lane(k, d) {
+        const out = [];
+        for (let c = nb[k * 4 + d]; c >= 0; c = nb[c * 4 + d]) out.push(c);
+        return out;
+      },
+      dirBetween: (a, b) => {
+        for (let d = 0; d < 4; d++) if (nb[a * 4 + d] === b) return d;
+        return -1;
+      },
+      side: (k, d) => nb[k * 4 + (d % 2 === 0 ? 1 : 2)],
+      sameLine: (a, b, d) => (d % 2 === 0 ? a % w === b % w : Math.floor(a / w) === Math.floor(b / w)),
+    };
+  }
+
+  /*
+   * The cube: six n by n faces. Each face has a corner `o` and two axes,
+   * `u` (across) and `v` (down) as seen from outside, plus its outward
+   * normal, in a box spanning 0 to n on every axis. Faces are numbered
+   * front, right, back, left, top, bottom.
+   */
+  const CUBE_FACES = [
+    { name: 'front', o: [0, 1, 1], u: [1, 0, 0], v: [0, -1, 0], n: [0, 0, 1] },
+    { name: 'right', o: [1, 1, 1], u: [0, 0, -1], v: [0, -1, 0], n: [1, 0, 0] },
+    { name: 'back', o: [1, 1, 0], u: [-1, 0, 0], v: [0, -1, 0], n: [0, 0, -1] },
+    { name: 'left', o: [0, 1, 0], u: [0, 0, 1], v: [0, -1, 0], n: [-1, 0, 0] },
+    { name: 'top', o: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], n: [0, 1, 0] },
+    { name: 'bottom', o: [0, 0, 1], u: [1, 0, 0], v: [0, 0, -1], n: [0, -1, 0] },
+  ];
+
+  const add3 = (a, b, k) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+  const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const same3 = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+
+  // The 3D step for moving in direction d on a face.
+  function cubeStep(face, d) {
+    const F = CUBE_FACES[face];
+    return d === 0 ? add3([0, 0, 0], F.v, -1) : d === 1 ? F.u.slice() : d === 2 ? F.v.slice() : add3([0, 0, 0], F.u, -1);
+  }
+
+  // The center of a cube cell in 3D.
+  function cubeCenter(n, f, u, v) {
+    const F = CUBE_FACES[f];
+    return add3(add3(add3([0, 0, 0], F.o, n), F.u, u + 0.5), F.v, v + 0.5);
+  }
+
+  function cubeGeometry(n) {
+    const per = n * n;
+    const count = 6 * per;
+    const nb = new Int32Array(count * 4).fill(-1);
+    const nd = new Int8Array(count * 4);
+    const key = (c) => c[0] * per + c[2] * n + c[1];
+    const cellOf = (k) => {
+      const f = Math.floor(k / per);
+      const r = k - f * per;
+      return [f, r % n, Math.floor(r / n)];
+    };
+    for (let k = 0; k < count; k++) {
+      const [f, u, v] = cellOf(k);
+      for (let d = 0; d < 4; d++) {
+        const nu = u + DX[d];
+        const nv = v + DY[d];
+        if (nu >= 0 && nv >= 0 && nu < n && nv < n) {
+          nb[k * 4 + d] = f * per + nv * n + nu;
+          nd[k * 4 + d] = d;
+          continue;
+        }
+        // Over the edge: half a step to the edge, then half a step down
+        // the next face, whose outward normal is the way we were heading.
+        const s = cubeStep(f, d);
+        const g = CUBE_FACES.findIndex((F) => same3(F.n, s));
+        const c = add3(add3(cubeCenter(n, f, u, v), s, 0.5), CUBE_FACES[f].n, -0.5);
+        const G = CUBE_FACES[g];
+        const rel = add3(c, G.o, -n);
+        const gu = Math.round(dot3(rel, G.u) - 0.5);
+        const gv = Math.round(dot3(rel, G.v) - 0.5);
+        nb[k * 4 + d] = g * per + gv * n + gu;
+        const down = add3([0, 0, 0], CUBE_FACES[f].n, -1);
+        for (let e = 0; e < 4; e++) if (same3(cubeStep(g, e), down)) nd[k * 4 + d] = e;
+      }
+    }
+    return {
+      kind: 'cube',
+      n,
+      count,
+      nb,
+      nd,
+      key,
+      cellOf,
+      lane(k, d) {
+        const [f, u, v] = cellOf(k);
+        const out = [];
+        for (let x = u + DX[d], y = v + DY[d]; x >= 0 && y >= 0 && x < n && y < n; x += DX[d], y += DY[d]) out.push(f * per + y * n + x);
+        return out;
+      },
+      dirBetween: (a, b) => {
+        if (Math.floor(a / per) !== Math.floor(b / per)) return -1;
+        for (let d = 0; d < 4; d++) if (nb[a * 4 + d] === b) return d;
+        return -1;
+      },
+      side(k, d) {
+        const [f, u, v] = cellOf(k);
+        const x = d % 2 === 0 ? u + 1 : u;
+        const y = d % 2 === 0 ? v : v + 1;
+        return x < n && y < n ? f * per + y * n + x : -1;
+      },
+      sameLine(a, b, d) {
+        const A = cellOf(a);
+        const B = cellOf(b);
+        return A[0] === B[0] && (d % 2 === 0 ? A[1] === B[1] : A[2] === B[2]);
+      },
+    };
+  }
+
+  const geoCache = new Map();
+
+  // The geometry for a puzzle or a spec: { kind: 'cube', n } or { w, h }.
+  function geometryOf(p) {
+    const id = p.kind === 'cube' ? 'c' + p.n : p.w + 'x' + p.h;
+    if (!geoCache.has(id)) geoCache.set(id, p.kind === 'cube' ? cubeGeometry(p.n) : flatGeometry(p.w, p.h));
+    return geoCache.get(id);
+  }
+
+  // ---------- Rules ----------
+
+  // The lane: every cell straight ahead of the head, out to the edge of its
+  // face.
+  function laneOf(puzzle, i) {
+    const g = geometryOf(puzzle);
+    const arrow = puzzle.arrows[i];
+    return g.lane(g.key(headOf(arrow)), dirOf(arrow)).map(g.cellOf);
   }
 
   // Which arrow sits in each cell (-1 for none), leaving out removed ones.
   function occupancy(puzzle, gone) {
-    const occ = new Int16Array(puzzle.w * puzzle.h).fill(-1);
+    const g = geometryOf(puzzle);
+    const occ = new Int16Array(g.count).fill(-1);
     puzzle.arrows.forEach((a, i) => {
       if (gone && gone[i]) return;
-      a.cells.forEach(([x, y]) => (occ[y * puzzle.w + x] = i));
+      a.cells.forEach((c) => (occ[g.key(c)] = i));
     });
     return occ;
   }
@@ -105,10 +263,11 @@
    * far the arrow lurches before it bumps.
    */
   function probe(puzzle, i, gone, occ) {
+    const g = geometryOf(puzzle);
     occ = occ || occupancy(puzzle, gone);
     const lane = laneOf(puzzle, i);
     for (let k = 0; k < lane.length; k++) {
-      const j = occ[lane[k][1] * puzzle.w + lane[k][0]];
+      const j = occ[g.key(lane[k])];
       if (j !== -1) return { free: false, by: j, steps: k, lane: lane.length };
     }
     return { free: true, by: -1, steps: lane.length, lane: lane.length };
@@ -125,11 +284,12 @@
 
   // For each arrow, every other arrow with a cell in its lane.
   function blockers(puzzle) {
+    const g = geometryOf(puzzle);
     const occ = occupancy(puzzle, null);
     return puzzle.arrows.map((a, i) => {
       const set = new Set();
-      laneOf(puzzle, i).forEach(([x, y]) => {
-        const j = occ[y * puzzle.w + x];
+      laneOf(puzzle, i).forEach((c) => {
+        const j = occ[g.key(c)];
         if (j !== -1) set.add(j);
       });
       return Array.from(set);
@@ -410,21 +570,18 @@
   const HOLE = -2;
 
   function tile(spec, rng) {
-    const { w, h } = spec;
-    const N = w * h;
+    const g = geometryOf(spec);
+    const { nb, nd } = g;
+    const N = g.count;
     const owner = new Int16Array(N).fill(-1);
-    const inside = (x, y) => x >= 0 && y >= 0 && x < w && y < h;
     const straight = !spec.bend;
     const holes = shuffle(Array.from({ length: N }, (_, c) => c), rng).slice(0, Math.round(N * (1 - spec.density)));
     holes.forEach((c) => (owner[c] = HOLE));
     const openAround = (c) => {
-      const x = c % w;
-      const y = (c - x) / w;
       let n = 0;
       for (let d = 0; d < 4; d++) {
-        const nx = x + DX[d];
-        const ny = y + DY[d];
-        if (inside(nx, ny) && owner[ny * w + nx] === -1) n++;
+        const m = nb[c * 4 + d];
+        if (m >= 0 && owner[m] === -1) n++;
       }
       return n;
     };
@@ -448,21 +605,17 @@
       let dir = -1;
       while (path.length < len) {
         const c = path[path.length - 1];
-        const x = c % w;
-        const y = (c - x) / w;
         let pick = null;
         let pickScore = Infinity;
         for (let d = 0; d < 4; d++) {
           if (straight && dir >= 0 && d !== dir) continue;
-          const nx = x + DX[d];
-          const ny = y + DY[d];
-          if (!inside(nx, ny) || owner[ny * w + nx] !== -1) continue;
-          const nc = ny * w + nx;
-          let score = openAround(nc) + rng() * 1.2;
+          const m = nb[c * 4 + d];
+          if (m < 0 || owner[m] !== -1) continue;
+          let score = openAround(m) + rng() * 1.2;
           if (dir >= 0 && d !== dir) score += (1 - spec.bend) * 2.5 - spec.bend;
           if (score < pickScore) {
             pickScore = score;
-            pick = [nc, d];
+            pick = [m, nd[c * 4 + d]];
           }
         }
         if (!pick) break;
@@ -477,22 +630,18 @@
     paths.forEach((p, i) => {
       if (p.length !== 1) return;
       const c = p[0];
-      const x = c % w;
-      const y = (c - x) / w;
       for (let d = 0; d < 4; d++) {
-        const nx = x + DX[d];
-        const ny = y + DY[d];
-        if (!inside(nx, ny)) continue;
-        const n = ny * w + nx;
-        const j = owner[n];
+        const m = nb[c * 4 + d];
+        if (m < 0) continue;
+        const j = owner[m];
         if (j < 0 || j === i || paths[j].length < 2 || paths[j].length >= spec.maxLen + STRETCH) continue;
         const q = paths[j];
-        const atStart = q[0] === n;
-        const atEnd = q[q.length - 1] === n;
+        const atStart = q[0] === m;
+        const atEnd = q[q.length - 1] === m;
         if (!atStart && !atEnd) continue;
         if (straight) {
           const next = atStart ? q[1] : q[q.length - 2];
-          if (next !== n + (n - c)) continue;
+          if (nb[m * 4 + nd[c * 4 + d]] !== next) continue;
         }
         if (atStart) q.unshift(c);
         else q.push(c);
@@ -507,39 +656,37 @@
   }
 
   function orient(spec, paths, rng) {
-    const { w, h } = spec;
-    const N = w * h;
+    const g = geometryOf(spec);
     const n = paths.length;
     const hard = Math.min(1, Math.max(0, spec.hard == null ? 0.5 : spec.hard));
-    const owner = new Int16Array(N).fill(-1);
+    const owner = new Int16Array(g.count).fill(-1);
     paths.forEach((p, i) => p.forEach((c) => (owner[c] = i)));
-    // Both ways each path could point: its cells, head, direction, lane
-    // length, the arrows in its lane, and the first one it would hit.
+    // Both ways each path could point: its cells, head, direction, lane,
+    // the arrows in its lane, and the first one it would hit. A way is
+    // ruled out when its last step crosses a cube edge (no clear direction)
+    // or its lane runs into its own body.
     const ways = paths.map((p, i) =>
       [p, p.slice().reverse()].map((cells) => {
         const head = cells[cells.length - 1];
-        const prev = cells[cells.length - 2];
-        const hx = head % w;
-        const hy = (head - hx) / w;
-        const d = dirBetween([prev % w, Math.floor(prev / w)], [hx, hy]);
+        const d = g.dirBetween(cells[cells.length - 2], head);
+        if (d < 0) return null;
+        const lane = g.lane(head, d);
         const blk = new Set();
         let first = -1;
-        let lane = 0;
-        for (let x = hx + DX[d], y = hy + DY[d]; x >= 0 && y >= 0 && x < w && y < h; x += DX[d], y += DY[d]) {
-          lane++;
-          const j = owner[y * w + x];
-          if (j === i) return null; // the lane runs into its own body
+        for (const c of lane) {
+          const j = owner[c];
+          if (j === i) return null;
           if (j >= 0) {
             if (first < 0) first = j;
             blk.add(j);
           }
         }
-        return { cells, head, hx, hy, d, lane, blk: Array.from(blk), first };
+        return { cells, head, d, lane, blk: Array.from(blk), first };
       })
     );
-    if (ways.some((v) => !v[0] && !v[1])) return null;
     const pick = ways.map((v) => (v[0] && v[1] ? rng.int(2) : v[0] ? 0 : 1));
-    const alive = new Array(n).fill(true);
+    // A path that can't point either way is left out; its cells stay empty.
+    const alive = ways.map((v) => !!(v[0] || v[1]));
 
     // Clears the board in waves. Returns the number of waves and the arrows
     // left stuck in loops.
@@ -572,6 +719,16 @@
       return { count, stuck };
     }
 
+    // The first live arrow in an arrow's lane.
+    function firstAlive(v) {
+      if (v.first >= 0 && alive[v.first]) return v.first;
+      for (const c of v.lane) {
+        const j = owner[c];
+        if (j >= 0 && alive[j]) return j;
+      }
+      return -1;
+    }
+
     function cost() {
       let free = 0;
       let laneSum = 0;
@@ -582,14 +739,13 @@
         if (!alive[i]) continue;
         const v = ways[i][pick[i]];
         live++;
-        laneSum += v.lane;
+        laneSum += v.lane.length;
         heads.set(v.head, v.d);
         const first = v.blk.length ? firstAlive(v) : -1;
         if (first < 0) free++;
         else {
           const u = ways[first][pick[first]];
-          const sameLine = v.d % 2 === 0 ? u.hx === v.hx : u.hy === v.hy;
-          if (u.d === v.d && sameLine) convoy++;
+          if (u.d === v.d && g.sameLine(u.head, v.head, v.d)) convoy++;
         }
       }
       // Side by side: a neighboring head pointing the same way.
@@ -597,50 +753,93 @@
       for (let i = 0; i < n; i++) {
         if (!alive[i]) continue;
         const v = ways[i][pick[i]];
-        const next = v.d % 2 === 0 ? (v.hx + 1 < w ? v.head + 1 : -1) : v.hy + 1 < h ? v.head + w : -1;
+        const next = g.side(v.head, v.d);
         if (next >= 0 && heads.get(next) === v.d) pairs++;
       }
       const r = waves();
       return r.stuck.length * 1000 + convoy * 4 + pairs * 3 + hard * (free * 6 - r.count * 1.5 - (laneSum / Math.max(1, live)) * 0.6);
     }
 
-    // The first live arrow in an arrow's lane.
-    function firstAlive(v) {
-      if (alive[v.first]) return v.first;
-      for (let x = v.hx + DX[v.d], y = v.hy + DY[v.d]; x >= 0 && y >= 0 && x < w && y < h; x += DX[v.d], y += DY[v.d]) {
-        const j = owner[y * w + x];
-        if (j >= 0 && alive[j]) return j;
-      }
-      return -1;
-    }
-
     const flippable = [];
     for (let i = 0; i < n; i++) if (ways[i][0] && ways[i][1]) flippable.push(i);
     const canFlip = new Set(flippable);
 
-    // Untangle first: flip arrows caught in loops, keeping any flip that
-    // doesn't leave more arrows stuck.
-    let stuck = waves().stuck;
-    for (let k = 0; k < n * 20 && stuck.length; k++) {
-      const options = stuck.filter((i) => canFlip.has(i));
+    // The arrows that are part of a loop (not just stuck behind one): those
+    // in a group where each one is blocked, through the others, by itself.
+    function looped() {
+      const index = new Int32Array(n).fill(-1);
+      const low = new Int32Array(n);
+      const onStack = new Uint8Array(n);
+      const stack = [];
+      const out = [];
+      let next = 0;
+      for (let root = 0; root < n; root++) {
+        if (!alive[root] || index[root] >= 0) continue;
+        // Iterative Tarjan: each frame is [arrow, position in its blockers].
+        const work = [[root, 0]];
+        index[root] = low[root] = next++;
+        stack.push(root);
+        onStack[root] = 1;
+        while (work.length) {
+          const top = work[work.length - 1];
+          const i = top[0];
+          const blk = ways[i][pick[i]].blk;
+          if (top[1] < blk.length) {
+            const j = blk[top[1]++];
+            if (!alive[j]) continue;
+            if (index[j] < 0) {
+              index[j] = low[j] = next++;
+              stack.push(j);
+              onStack[j] = 1;
+              work.push([j, 0]);
+            } else if (onStack[j]) low[i] = Math.min(low[i], index[j]);
+          } else {
+            work.pop();
+            if (work.length) {
+              const parent = work[work.length - 1][0];
+              low[parent] = Math.min(low[parent], low[i]);
+            }
+            if (low[i] === index[i]) {
+              const group = [];
+              let j;
+              do {
+                j = stack.pop();
+                onStack[j] = 0;
+                group.push(j);
+              } while (j !== i);
+              if (group.length > 1) out.push(...group);
+            }
+          }
+        }
+      }
+      return out;
+    }
+
+    // Untangle first: flip arrows that are in loops, keeping any flip that
+    // doesn't leave more arrows in loops.
+    let loops = looped();
+    for (let k = 0; k < n * 20 && loops.length; k++) {
+      const options = loops.filter((i) => canFlip.has(i));
       if (!options.length) break;
       const i = options[rng.int(options.length)];
       pick[i] ^= 1;
-      const next = waves().stuck;
-      if (next.length <= stuck.length) stuck = next;
+      const after = looped();
+      if (after.length <= loops.length) loops = after;
       else pick[i] ^= 1;
     }
-    // Last resort: take out a looped arrow and leave its cells empty.
-    // Removing an arrow only frees others, so this always ends.
-    while (stuck.length) {
-      alive[stuck[rng.int(stuck.length)]] = false;
-      stuck = waves().stuck;
+    // Last resort: take out an arrow that is in a loop and leave its cells
+    // empty. Removing an arrow only frees others, so this always ends.
+    while (loops.length) {
+      alive[loops[rng.int(loops.length)]] = false;
+      loops = looped();
     }
 
     // Then improve: flip arrows one at a time, keeping changes that don't
-    // make the board worse (and never bring a loop back).
+    // make the board worse (and never bring a loop back). Big boards get a
+    // smaller budget per arrow so they still build quickly.
     let current = cost();
-    const steps = flippable.length ? Math.round(n * (12 + 28 * hard)) : 0;
+    const perArrow = (12 + 28 * hard) * Math.min(1, 140 / Math.max(1, n));
+    const steps = flippable.length ? Math.round(n * Math.max(4, perArrow)) : 0;
     for (let k = 0; k < steps; k++) {
       const i = flippable[rng.int(flippable.length)];
       if (!alive[i]) continue;
@@ -654,9 +853,14 @@
     ways.forEach((v, i) => {
       if (!alive[i]) return;
       filled += v[pick[i]].cells.length;
-      arrows.push({ cells: v[pick[i]].cells.map((c) => [c % w, Math.floor(c / w)]) });
+      arrows.push({ cells: v[pick[i]].cells.map(g.cellOf) });
     });
-    return { w, h, arrows, filled };
+    return Object.assign(shapeOf(spec), { arrows, filled });
+  }
+
+  // The fields that say what shape a board is.
+  function shapeOf(p) {
+    return p.kind === 'cube' ? { kind: 'cube', n: p.n } : { w: p.w, h: p.h };
   }
 
   /*
@@ -666,16 +870,16 @@
   const PALETTE_SIZE = 12;
 
   function colorArrows(puzzle, rng) {
+    const g = geometryOf(puzzle);
     const occ = occupancy(puzzle, null);
-    const { w, h } = puzzle;
     puzzle.arrows.forEach((a, i) => {
       const near = new Set();
-      a.cells.forEach(([x, y]) => {
+      a.cells.forEach((cell) => {
+        const k = g.key(cell);
         for (let d = 0; d < 4; d++) {
-          const nx = x + DX[d];
-          const ny = y + DY[d];
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const j = occ[ny * w + nx];
+          const m = g.nb[k * 4 + d];
+          if (m < 0) continue;
+          const j = occ[m];
           if (j !== -1 && j < i) near.add(puzzle.arrows[j].color);
         }
       });
@@ -696,13 +900,16 @@
 
   function generate(spec) {
     const seed = spec.seed == null ? 'unfold' : spec.seed;
+    const g = geometryOf(spec);
+    // Big boards build fewer candidates so they stay quick.
+    const candidates = g.count > 400 ? 2 : CANDIDATES;
     const found = [];
-    for (let attempt = 0; attempt < CANDIDATES; attempt++) {
+    for (let attempt = 0; attempt < candidates; attempt++) {
       const rng = makeRng(hashString(seed + ':' + attempt));
-      // Tile and orient. A path whose lane would run into its own body
-      // either way means falling back to building the board in reverse
-      // removal order, which always works.
-      const board = orient(spec, tile(spec, rng), rng) || build(spec, rng);
+      let board = orient(spec, tile(spec, rng), rng);
+      // Almost never needed: on a flat board, fall back to building in
+      // reverse removal order, which always gives a clearable board.
+      if (board.arrows.length < 2 && spec.kind !== 'cube') board = build(spec, rng);
       if (board.arrows.length < 2) continue;
       const r = rate(board, seed);
       found.push(Object.assign(board, r, { attempt }));
@@ -712,17 +919,15 @@
     const pick = spec.pick == null ? 0.5 : Math.min(1, Math.max(0, spec.pick));
     const chosen = found[Math.round(pick * (found.length - 1))];
     colorArrows(chosen, makeRng(hashString('color:' + seed)));
-    return {
-      w: chosen.w,
-      h: chosen.h,
+    return Object.assign(shapeOf(chosen), {
       arrows: chosen.arrows,
-      fill: chosen.filled / (chosen.w * chosen.h),
+      fill: chosen.filled / g.count,
       rating: chosen.rating,
       waves: chosen.waves,
       startFree: chosen.startFree,
       minFree: chosen.minFree,
       seed,
-    };
+    });
   }
 
   // ---------- Campaign ----------
@@ -834,23 +1039,26 @@
     return Object.assign(generate(spec), spec);
   }
 
-  // ---------- Mix your own ----------
+  // ---------- Build your own ----------
 
   const CUSTOM = {
     minW: 4,
-    maxW: 12,
+    maxW: 30,
     minH: 4,
-    maxH: 16,
+    maxH: 40,
+    minFace: 3,
+    maxFace: 10,
     density: [0.65, 0.85, 0.98], // Roomy, Snug, Packed
     length: [[2, 3], [2, 6], [3, 10]], // Short, Mixed, Long
     bend: [0, 0.35, 0.65], // Straight, Bendy, Twisty
   };
 
+  // A custom board's settings: { shape: 'flat', w, h } or { shape: 'cube',
+  // n }, plus density, length, and bend (0-2 each) and a seed.
   function customSpec(c) {
     const len = CUSTOM.length[c.length];
-    return {
-      w: c.w,
-      h: c.h,
+    const shape = c.shape === 'cube' ? { kind: 'cube', n: c.n } : { w: c.w, h: c.h };
+    return Object.assign(shape, {
       density: CUSTOM.density[c.density],
       minLen: len[0],
       maxLen: len[1],
@@ -859,31 +1067,38 @@
       hard: 0.75,
       cover: 1.4,
       seed: 'custom:' + codeOf(Object.assign({}, c, { seed: 0 })) + ':' + c.seed,
-    };
+    });
   }
 
   function validCustom(c) {
     const ok3 = (v) => Number.isInteger(v) && v >= 0 && v <= 2;
-    return (
-      Number.isInteger(c.w) && c.w >= CUSTOM.minW && c.w <= CUSTOM.maxW &&
-      Number.isInteger(c.h) && c.h >= CUSTOM.minH && c.h <= CUSTOM.maxH &&
-      ok3(c.density) && ok3(c.length) && ok3(c.bend)
-    );
+    const size =
+      c.shape === 'cube'
+        ? Number.isInteger(c.n) && c.n >= CUSTOM.minFace && c.n <= CUSTOM.maxFace
+        : Number.isInteger(c.w) && c.w >= CUSTOM.minW && c.w <= CUSTOM.maxW && Number.isInteger(c.h) && c.h >= CUSTOM.minH && c.h <= CUSTOM.maxH;
+    return size && ok3(c.density) && ok3(c.length) && ok3(c.bend);
   }
 
   /*
-   * Share codes: two digits of width, two of height, then density, length,
-   * and bend (0-2 each), a dash, and the seed, like 0810121-4821.
+   * Share codes. A flat board: two digits of width, two of height, then
+   * density, length, and bend (0-2 each), a dash, and the seed, like
+   * 0810121-4821. A cube: C, two digits of face size, the same three
+   * settings, and the seed, like C06121-4821.
    */
   function codeOf(c) {
-    return String(c.w).padStart(2, '0') + String(c.h).padStart(2, '0') + c.density + c.length + c.bend + '-' + c.seed;
+    const tail = '' + c.density + c.length + c.bend + '-' + c.seed;
+    if (c.shape === 'cube') return 'C' + String(c.n).padStart(2, '0') + tail;
+    return String(c.w).padStart(2, '0') + String(c.h).padStart(2, '0') + tail;
   }
 
   function parseCode(text) {
-    const m = /^\s*(\d{2})(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})\s*$/.exec(text || '');
-    if (!m) return null;
-    const c = { w: +m[1], h: +m[2], density: +m[3], length: +m[4], bend: +m[5], seed: +m[6] };
-    return validCustom(c) ? c : null;
+    const t = String(text || '').trim().toUpperCase();
+    let c = null;
+    let m = /^C\s*(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})$/.exec(t);
+    if (m) c = { shape: 'cube', n: +m[1], density: +m[2], length: +m[3], bend: +m[4], seed: +m[5] };
+    m = m ? null : /^(\d{2})(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})$/.exec(t);
+    if (m) c = { shape: 'flat', w: +m[1], h: +m[2], density: +m[3], length: +m[4], bend: +m[5], seed: +m[6] };
+    return c && validCustom(c) ? c : null;
   }
 
   // ---------- Stars ----------
@@ -912,6 +1127,12 @@
     DY,
     DIR_NAMES,
     dirBetween,
+    flatGeometry,
+    cubeGeometry,
+    geometryOf,
+    CUBE_FACES,
+    cubeCenter,
+    cubeStep,
     headOf,
     dirOf,
     laneOf,

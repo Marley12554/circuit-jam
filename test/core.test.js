@@ -149,17 +149,25 @@ test('denser settings fill more of the board', () => {
 });
 
 test('share codes round-trip and reject bad input', () => {
-  const c = { w: 8, h: 10, density: 1, length: 2, bend: 1, seed: 4821 };
+  const c = { shape: 'flat', w: 8, h: 10, density: 1, length: 2, bend: 1, seed: 4821 };
   const code = Core.codeOf(c);
   assert.strictEqual(code, '0810121-4821');
   assert.deepStrictEqual(Core.parseCode(code), c);
   assert.deepStrictEqual(Core.parseCode(' 0810121 4821 '), c);
   assert.strictEqual(Core.parseCode('0810321-4821'), null); // density out of range
-  assert.strictEqual(Core.parseCode('1310121-4821'), null); // too wide
+  assert.strictEqual(Core.parseCode('3110121-4821'), null); // too wide
+  assert.strictEqual(Core.parseCode('3041121-4821'), null); // too tall
+  assert.strictEqual(Core.parseCode('3040211-4821').h, 40); // the biggest board
   assert.strictEqual(Core.parseCode('0303121-1'), null); // too small
   assert.strictEqual(Core.parseCode('hello'), null);
   // Same code, same board.
   assert.deepStrictEqual(Core.generate(Core.customSpec(c)), Core.generate(Core.customSpec(Core.parseCode(code))));
+  // Cube codes start with C.
+  const cube = { shape: 'cube', n: 6, density: 2, length: 1, bend: 1, seed: 77 };
+  assert.strictEqual(Core.codeOf(cube), 'C06211-77');
+  assert.deepStrictEqual(Core.parseCode('c06211-77'), cube);
+  assert.strictEqual(Core.parseCode('C11211-77'), null); // face too big
+  assert.strictEqual(Core.parseCode('C02211-77'), null); // face too small
 });
 
 test('stars: clean is 3, a few bumps 2, more 1, hints cap at 2', () => {
@@ -183,4 +191,93 @@ test('sets: ten levels each, then endless sets', () => {
 test('early levels have only straight arrows; bends arrive at level 6', () => {
   for (let n = 2; n <= 5; n++) assert.strictEqual(Core.levelSpec(n).bend, 0, 'level ' + n);
   assert.ok(Core.levelSpec(6).bend > 0);
+});
+
+// ---------- The cube ----------
+
+test('cube neighbors: every step over an edge can be walked back', () => {
+  for (const n of [3, 5, 8]) {
+    const g = Core.cubeGeometry(n);
+    assert.strictEqual(g.count, 6 * n * n);
+    for (let k = 0; k < g.count; k++) {
+      for (let d = 0; d < 4; d++) {
+        const m = g.nb[k * 4 + d];
+        assert.ok(m >= 0, 'every cube cell has four neighbors');
+        assert.strictEqual(g.nb[m * 4 + ((g.nd[k * 4 + d] + 2) % 4)], k, 'n=' + n + ' cell ' + k + ' dir ' + d);
+      }
+    }
+  }
+});
+
+test('cube neighbors are really next to each other in 3D', () => {
+  const n = 4;
+  const g = Core.cubeGeometry(n);
+  for (let k = 0; k < g.count; k++) {
+    const [f, u, v] = g.cellOf(k);
+    const a = Core.cubeCenter(n, f, u, v);
+    for (let d = 0; d < 4; d++) {
+      const [f2, u2, v2] = g.cellOf(g.nb[k * 4 + d]);
+      const b = Core.cubeCenter(n, f2, u2, v2);
+      const dist = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      // One apart on a face; across an edge the centers are diagonal.
+      assert.ok(Math.abs(dist - (f === f2 ? 1 : Math.SQRT1_2)) < 1e-9, 'distance ' + dist);
+    }
+  }
+});
+
+function checkCube(lv, label) {
+  const g = Core.geometryOf(lv);
+  const seen = new Set();
+  lv.arrows.forEach((a, i) => {
+    assert.ok(a.cells.length >= 2, label + ' arrow too short');
+    a.cells.forEach((c, k) => {
+      const key = g.key(c);
+      assert.ok(!seen.has(key), label + ' two arrows share a cell');
+      seen.add(key);
+      if (k) {
+        const prev = g.key(a.cells[k - 1]);
+        let next = false;
+        for (let d = 0; d < 4; d++) if (g.nb[prev * 4 + d] === key) next = true;
+        assert.ok(next, label + ' arrow ' + i + ' has a gap');
+      }
+    });
+    // The head's last step stays on one face, so it has a direction.
+    assert.notStrictEqual(Core.dirOf(a), -1, label + ' arrow ' + i + ' has no direction');
+    const own = new Set(a.cells.map((c) => g.key(c)));
+    Core.laneOf(lv, i).forEach((c) => {
+      assert.strictEqual(c[0], Core.headOf(a)[0], label + ' lane leaves its face');
+      assert.ok(!own.has(g.key(c)), label + ' arrow ' + i + ' blocks itself');
+    });
+  });
+  assert.ok(Core.isClearable(lv), label + ' cannot be cleared');
+}
+
+test('cube boards at every setting can be cleared', () => {
+  const rng = Core.makeRng(11);
+  for (let k = 0; k < 30; k++) {
+    const c = {
+      shape: 'cube',
+      n: Core.CUSTOM.minFace + rng.int(6),
+      density: rng.int(3),
+      length: rng.int(3),
+      bend: rng.int(3),
+      seed: 1000 + rng.int(9000),
+    };
+    checkCube(Core.generate(Core.customSpec(c)), Core.codeOf(c));
+  }
+});
+
+test('some cube traces wrap over an edge', () => {
+  let wraps = 0;
+  for (let seed = 0; seed < 5; seed++) {
+    const lv = Core.generate(Core.customSpec({ shape: 'cube', n: 5, density: 2, length: 2, bend: 1, seed }));
+    lv.arrows.forEach((a) => a.cells.some((c, k) => k && c[0] !== a.cells[k - 1][0]) && wraps++);
+  }
+  assert.ok(wraps > 5, 'traces cross edges: ' + wraps);
+});
+
+test('the biggest flat boards build and clear', () => {
+  const lv = Core.generate(Core.customSpec({ shape: 'flat', w: 30, h: 40, density: 2, length: 1, bend: 1, seed: 3 }));
+  checkBoard(lv, '30x40');
+  assert.ok(lv.fill > 0.8, 'packed big board is mostly full: ' + lv.fill.toFixed(2));
 });
