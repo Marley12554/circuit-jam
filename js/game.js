@@ -1116,7 +1116,7 @@
       coreBurst(color, full);
     }
     if (full) {
-      Sound.overload();
+      if (!isCube()) Sound.overload();
       win();
     } else Sound.zap(game.absorbed / total);
   }
@@ -1426,15 +1426,22 @@
       save();
     }
     updateHud();
-    buzz([30, 50, 30, 50, 120]);
-    say(stars === 3 ? 'Core fully charged. Not a single short!' : 'Core fully charged! Great work!');
+    const finale = isCube() && !reduceMotion;
+    if (finale) say('Every face clear. Powering up the cube!');
+    else {
+      buzz([30, 50, 30, 50, 120]);
+      say(stars === 3 ? 'Core fully charged. Not a single short!' : 'Core fully charged! Great work!');
+    }
     const epoch = game.epoch;
     setTimeout(() => {
       if (!game.done || epoch !== game.epoch || screen !== 'play') return;
-      Sound.win();
-      confetti();
+      if (finale) say(stars === 3 ? 'Cube fully powered. Not a single short!' : 'Cube fully powered! Great work!');
+      else {
+        Sound.win();
+        confetti();
+      }
       showWin(stars);
-    }, reduceMotion ? 100 : 750);
+    }, reduceMotion ? 100 : finale ? FINALE.card : 750);
   }
 
   function showWin(stars) {
@@ -1753,6 +1760,7 @@
     hover: -1,
     meterFlash: 0,
     meterColor: '#ffffff',
+    finale: null,
     faceTraces: [],
     cleared: new Set(),
     faceFx: new Map(), // face -> when it was cleared
@@ -1808,6 +1816,7 @@
     p.arrows.forEach((a, i) => new Set(a.cells.map((c) => c[0])).forEach((f) => cube.faceTraces[f].push(i)));
     cube.cleared = new Set();
     cube.faceFx.clear();
+    cube.finale = null;
     for (let f = 0; f < 6; f++) if (cube.faceTraces[f].every((i) => game.gone[i])) cube.cleared.add(f);
     cube.zaps.clear();
     cube.particles = [];
@@ -2027,6 +2036,7 @@
     const n = p.n;
     ctx.setTransform(cube.dpr, 0, 0, cube.dpr, 0, 0);
     ctx.clearRect(0, 0, cube.W, cube.H);
+    drawFinaleBack(now);
     // Faces turned toward you, with their tiles.
     for (let f = 0; f < 6; f++) {
       const facing = faceFacing(f);
@@ -2152,6 +2162,7 @@
     });
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
+    drawFinaleFront(now);
     cubeDrawMeter(now);
   }
 
@@ -2180,11 +2191,12 @@
     const [r, g, b] = labRgb();
     const start = cube.faceFx.get(f);
     const t = start == null || reduceMotion ? 1 : Math.min(1, (now - start) / FACE_FX_MS);
-    const live = t < 1;
+    const live = t < 1 && !cube.finale;
     const front = 0.4 + 0.6 * Math.min(1, faceFacing(f) / 0.6);
+    const power = finaleGlow(now);
     for (let v = 0; v < n; v++) {
       for (let u = 0; u < n; u++) {
-        let a = 0.13;
+        let a = 0.13 + 0.8 * power;
         if (live) {
           // The wave: brightest where its front is now, fading as it goes.
           const dist = Math.hypot(u + 0.5 - n / 2, v + 0.5 - n / 2) / (n * 0.71);
@@ -2206,8 +2218,8 @@
     ctx.beginPath();
     corners.forEach((c, k) => (k ? ctx.lineTo(c[0], c[1]) : ctx.moveTo(c[0], c[1])));
     ctx.closePath();
-    ctx.strokeStyle = live ? 'rgba(255,255,255,' + (1 - t).toFixed(2) + ')' : 'rgba(' + r + ',' + g + ',' + b + ',0.7)';
-    ctx.lineWidth = live ? 2 + 7 * (1 - t) : 2;
+    ctx.strokeStyle = live ? 'rgba(255,255,255,' + (1 - t).toFixed(2) + ')' : power > 0.05 ? 'rgba(255,255,255,' + Math.min(1, 0.4 + power).toFixed(2) + ')' : 'rgba(' + r + ',' + g + ',' + b + ',0.7)';
+    ctx.lineWidth = live ? 2 + 7 * (1 - t) : 2 + 5 * power;
     ctx.stroke();
     if (live) {
       const c = project(facePoint(f, n / 2, n / 2));
@@ -2424,6 +2436,11 @@
     }
     if (game.hinted >= 0 || now - cube.meterFlash < 450) active = true;
     cube.faceFx.forEach((t) => now - t < FACE_FX_MS && (active = true));
+    // The finale runs, and the reactor keeps turning behind the win card.
+    if (cube.finale && game.done) {
+      finaleStep(now, dt);
+      active = true;
+    }
     cube.zaps.forEach((t, i) => (now - t < 280 ? (active = true) : cube.zaps.delete(i)));
     cubeDraw(now);
     if (active) cubeKick();
@@ -2469,7 +2486,227 @@
     cube.meterFlash = performance.now();
     cube.meterColor = color;
     burst(cube.W / 2, cube.meterY || 24, color, full ? 30 : 8, full ? 0.4 : 0.18);
+    if (full) startFinale();
     cubeKick();
+  }
+
+  /*
+   * The finale, when the whole cube is clear. The energy you discharged
+   * comes back: streaks pour in from every edge of the screen and strike
+   * the cube, which starts turning by itself and speeds up while every
+   * tile floods with light and its edges go white-hot. Then it bursts: a
+   * flash over the whole screen, shockwaves racing out, and a storm of
+   * sparks. After that it keeps turning slowly behind the win card,
+   * glowing and pulsing like a powered reactor.
+   */
+  const FINALE = { inflow: 1100, spinFrom: 500, burst: 2300, card: 3300 };
+
+  function startFinale() {
+    if (reduceMotion) return;
+    const now = performance.now();
+    const colors = game.palette.map((c) => COLORS[c]);
+    const W = cube.W;
+    const H = cube.H;
+    const streaks = [];
+    for (let k = 0; k < 34; k++) {
+      // Start somewhere on the edge of the board area.
+      const side = k % 4;
+      const along = Math.random();
+      const x = side === 0 ? along * W : side === 1 ? W + 20 : side === 2 ? along * W : -20;
+      const y = side === 0 ? -20 : side === 1 ? along * H : side === 2 ? H + 20 : along * H;
+      streaks.push({ x, y, at: now + Math.random() * (FINALE.inflow - 380), ms: 300 + Math.random() * 160, color: colors[k % colors.length], hit: false });
+    }
+    cube.finale = { start: now, streaks, burst: false, spin: 0 };
+    cube.spin.vx = cube.spin.vy = 0;
+    cube.focus = null;
+    Sound.finale(FINALE.burst / 1000);
+    // Pulses that speed up with the charge, then one long buzz on the
+    // burst.
+    const pattern = [];
+    let t = 0;
+    let gap = 260;
+    while (t + gap + 14 < FINALE.burst) {
+      pattern.push(14, gap);
+      t += 14 + gap;
+      gap = Math.max(28, gap * 0.8);
+    }
+    pattern.push(Math.max(10, FINALE.burst - t), 0, 480);
+    buzz(pattern);
+  }
+
+  // How far the power-up has come, 0 to 1, and a slow pulse afterward.
+  function finaleGlow(now) {
+    const f = cube.finale;
+    if (!f) return 0;
+    const t = now - f.start;
+    if (t < FINALE.burst) return Math.pow(Math.max(0, (t - 200) / (FINALE.burst - 200)), 1.15);
+    const after = (t - FINALE.burst) / 600;
+    const settle = 0.55 + 0.45 * Math.exp(-after);
+    return settle + 0.12 * Math.sin((t - FINALE.burst) / 260);
+  }
+
+  function finaleStep(now, dt) {
+    const f = cube.finale;
+    const t = now - f.start;
+    // Spin: speeds up until the burst, then eases to a slow turn.
+    const target = t < FINALE.spinFrom ? 0 : t < FINALE.burst ? 0.0002 + 0.0105 * Math.pow((t - FINALE.spinFrom) / (FINALE.burst - FINALE.spinFrom), 2) : 0.0006;
+    f.spin += (target - f.spin) * Math.min(1, dt / (t < FINALE.burst ? 120 : 600));
+    cubeTurn(f.spin * dt, f.spin * dt * 0.42);
+    // Streaks striking the cube.
+    f.streaks.forEach((sk) => {
+      if (!sk.hit && now >= sk.at + sk.ms) {
+        sk.hit = true;
+        burst(cube.cx, cube.cy, sk.color, 4, 0.16);
+      }
+    });
+    if (!f.burst && t >= FINALE.burst) {
+      f.burst = true;
+      finaleBurst();
+    }
+  }
+
+  // The streaks pouring in, and the glow swelling behind the cube.
+  function drawFinaleBack(now) {
+    const f = cube.finale;
+    if (!f) return;
+    const ctx = cube.ctx;
+    const glow = finaleGlow(now);
+    const [r, g, b] = labRgb();
+    const R = game.puzzle.n * cube.s * (1.05 + 0.5 * glow);
+    const grad = ctx.createRadialGradient(cube.cx, cube.cy, 0, cube.cx, cube.cy, R);
+    grad.addColorStop(0, 'rgba(255,255,255,' + (0.35 * glow).toFixed(3) + ')');
+    grad.addColorStop(0.35, 'rgba(' + r + ',' + g + ',' + b + ',' + (0.45 * glow).toFixed(3) + ')');
+    grad.addColorStop(1, 'rgba(' + r + ',' + g + ',' + b + ',0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(cube.cx - R, cube.cy - R, R * 2, R * 2);
+  }
+
+  function drawFinaleFront(now) {
+    const f = cube.finale;
+    if (!f) return;
+    const ctx = cube.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    // Lightning arcing off the cube, more and more as it charges.
+    const t0 = now - f.start;
+    if (t0 > FINALE.spinFrom && t0 < FINALE.burst) {
+      const p = (t0 - FINALE.spinFrom) / (FINALE.burst - FINALE.spinFrom);
+      const size = game.puzzle.n * cube.s;
+      const [r, g, b] = labRgb();
+      const count = Math.round(1 + p * p * 9);
+      ctx.lineJoin = 'bevel';
+      for (let k = 0; k < count; k++) {
+        const a = Math.random() * Math.PI * 2;
+        const r0 = size * (0.35 + Math.random() * 0.2);
+        const r1 = size * (0.85 + Math.random() * 0.6 * (0.4 + p));
+        ctx.beginPath();
+        for (let j = 0; j <= 6; j++) {
+          const rr = r0 + ((r1 - r0) * j) / 6;
+          const aa = a + (Math.random() - 0.5) * 0.35;
+          const x = cube.cx + Math.cos(aa) * rr;
+          const y = cube.cy + Math.sin(aa) * rr;
+          if (j) ctx.lineTo(x, y);
+          else ctx.moveTo(x, y);
+        }
+        ctx.globalAlpha = 0.5 + 0.5 * Math.random();
+        ctx.strokeStyle = Math.random() < 0.5 ? '#ffffff' : 'rgb(' + r + ',' + g + ',' + b + ')';
+        ctx.lineWidth = 1.2 + p * 1.6;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    f.streaks.forEach((sk) => {
+      const t = (now - sk.at) / sk.ms;
+      if (t < 0 || t > 1.15) return;
+      const e = Math.min(1, t) * Math.min(1, t);
+      const x = sk.x + (cube.cx - sk.x) * e;
+      const y = sk.y + (cube.cy - sk.y) * e;
+      const back = Math.max(0, e - 0.28);
+      const bx = sk.x + (cube.cx - sk.x) * back;
+      const by = sk.y + (cube.cy - sk.y) * back;
+      ctx.globalAlpha = t > 1 ? Math.max(0, 1 - (t - 1) / 0.15) : 1;
+      ctx.strokeStyle = sk.color;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // The burst: a flash over the whole screen, shockwave rings, and sparks,
+  // drawn on the full-screen effects layer.
+  function finaleBurst() {
+    const r = cube.canvas.getBoundingClientRect();
+    const x = r.left + cube.cx;
+    const y = r.top + cube.cy;
+    const [lr, lg, lb] = labRgb();
+    burst(cube.cx, cube.cy, 'rgb(' + lr + ',' + lg + ',' + lb + ')', 70, 0.7);
+    const canvas = $('confetti');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const far = Math.hypot(Math.max(x, W - x), Math.max(y, H - y)) + 60;
+    const colors = game.palette.map((c) => COLORS[c]).concat(['#ffffff', '#ffffff']);
+    const bits = Array.from({ length: 220 }, () => {
+      const a = Math.random() * Math.PI * 2;
+      const v = 4 + Math.random() * 15;
+      return { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, size: 1.5 + Math.random() * 3, color: colors[Math.floor(Math.random() * colors.length)] };
+    });
+    const start = performance.now();
+    function frame(now) {
+      const t = now - start;
+      ctx.clearRect(0, 0, W, H);
+      // The flash.
+      const flash = Math.max(0, 1 - t / 520);
+      if (flash > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,' + (0.85 * flash * flash).toFixed(3) + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+      ctx.globalCompositeOperation = 'lighter';
+      // Shockwaves.
+      [0, 140, 300].forEach((delay, k) => {
+        const p = (t - delay) / 900;
+        if (p <= 0 || p >= 1) return;
+        ctx.globalAlpha = (1 - p) * (k ? 0.6 : 0.95);
+        ctx.strokeStyle = k === 1 ? 'rgb(' + lr + ',' + lg + ',' + lb + ')' : '#ffffff';
+        ctx.lineWidth = (k ? 4 : 9) * (1 - p) + 1;
+        ctx.beginPath();
+        ctx.arc(x, y, 30 + far * (1 - Math.pow(1 - p, 2.2)), 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      // Sparks.
+      bits.forEach((b) => {
+        b.vx *= 0.975;
+        b.vy = b.vy * 0.975 + 0.12;
+        const px = b.x;
+        const py = b.y;
+        b.x += b.vx;
+        b.y += b.vy;
+        ctx.globalAlpha = Math.max(0, 1 - t / 2200);
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.size;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      if (t < 2200) requestAnimationFrame(frame);
+      else ctx.clearRect(0, 0, W, H);
+    }
+    requestAnimationFrame(frame);
   }
 
   // Turns the cube so the face holding the trace's head looks at you,
@@ -2658,6 +2895,7 @@
   window.__unfoldTest = {
     cubeZoom: () => cube.zoom,
     facesCleared: () => cube.cleared.size,
+    finaleTime: () => (cube.finale ? performance.now() - cube.finale.start : -1),
     turn(dx, dy) {
       cubeTurn(dx, dy);
       cubeDraw(performance.now());

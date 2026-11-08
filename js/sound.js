@@ -193,6 +193,80 @@
       tone(140, 0, 0.25, { to: 50, gain: 0.35 });
       noise(0, 0.35, { freq: 1500, to: 9000, q: 0.8, gain: 0.06 });
     },
+    /*
+     * The cube's finale: a long rising charge that builds for `seconds`
+     * (a buzzing swell opening up, a climbing whine, beeps that come
+     * faster and higher, and thickening crackle), then a deep boom with a
+     * crack of static and a shimmering chord that rings out.
+     */
+    finale(seconds) {
+      const ac = audio();
+      if (!ac) return;
+      const T = Math.max(1, seconds || 2.3);
+      const t0 = ac.currentTime;
+      const t1 = t0 + T;
+      // The swell.
+      const filter = ac.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 7;
+      filter.frequency.setValueAtTime(220, t0);
+      filter.frequency.exponentialRampToValueAtTime(7500, t1);
+      const env = ac.createGain();
+      env.gain.setValueAtTime(0.0001, t0);
+      env.gain.exponentialRampToValueAtTime(0.06, t0 + 0.3);
+      env.gain.exponentialRampToValueAtTime(0.2, t1 - 0.05);
+      env.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.08);
+      const trem = ac.createGain();
+      trem.gain.value = 0.7;
+      const lfo = ac.createOscillator();
+      const depth = ac.createGain();
+      lfo.frequency.setValueAtTime(6, t0);
+      lfo.frequency.exponentialRampToValueAtTime(48, t1);
+      depth.gain.value = 0.3;
+      lfo.connect(depth);
+      depth.connect(trem.gain);
+      filter.connect(trem);
+      trem.connect(env);
+      env.connect(master);
+      [['sawtooth', 1], ['sawtooth', 1.007], ['square', 2.003]].forEach(([type, m]) => {
+        const o = ac.createOscillator();
+        o.type = type;
+        o.frequency.setValueAtTime(45 * m, t0);
+        o.frequency.exponentialRampToValueAtTime(720 * m, t1);
+        o.connect(filter);
+        o.start(t0);
+        o.stop(t1 + 0.1);
+      });
+      lfo.start(t0);
+      lfo.stop(t1 + 0.1);
+      tone(500, 0, T, { to: 4200, gain: 0.04 });
+      // Beeps, faster and higher as it charges.
+      let at = 0.1;
+      let gap = 0.32;
+      let pitch = 660;
+      while (at < T - 0.05) {
+        tone(pitch, at, 0.06, { type: 'square', gain: 0.035 });
+        at += gap;
+        gap = Math.max(0.035, gap * 0.82);
+        pitch *= 1.045;
+      }
+      // Crackle, thickening.
+      const pops = Math.round(T * 30);
+      for (let k = 0; k < pops; k++) {
+        const when = T * Math.sqrt(Math.random());
+        noise(when, 0.014, { freq: 2500 + Math.random() * 5000, q: 3, gain: 0.06 + 0.2 * (when / T) });
+      }
+      // The burst.
+      tone(130, T, 1.4, { to: 28, gain: 0.6 });
+      tone(65, T, 1.6, { to: 24, gain: 0.4 });
+      noise(T, 0.9, { type: 'lowpass', freq: 3500, to: 150, q: 0.6, gain: 0.5 });
+      noise(T, 0.25, { type: 'highpass', freq: 3000, q: 0.5, gain: 0.25 });
+      [523, 659, 784, 988, 1319].forEach((f, i) => {
+        tone(f, T + 0.08 + i * 0.05, 1.8, { type: 'triangle', gain: 0.07 });
+        tone(f * 1.005, T + 0.08 + i * 0.05, 1.8, { gain: 0.04 });
+      });
+      tone(2093, T + 0.35, 1.6, { gain: 0.035, to: 2150 });
+    },
     // The core filling up on the last trace: the landing, then a surge
     // that climbs and bursts.
     overload() {
