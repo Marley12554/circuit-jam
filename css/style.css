@@ -1692,6 +1692,12 @@ input:focus-visible {
   grid-template-columns: repeat(2, 99px);
 }
 
+/* The flat board's finale is drawn on a canvas over the tray. */
+.fx-canvas {
+  position: absolute;
+  pointer-events: none;
+}
+
 /* ---------- Big boards: zoom and pan ---------- */
 
 /* The flat board sits on a stage that can be scaled and moved. */

@@ -883,6 +883,10 @@
     svg.appendChild(cursorEl);
     stage.appendChild(tray);
     stage.appendChild(svg);
+    fxCanvas = document.createElement('canvas');
+    fxCanvas.className = 'fx-canvas';
+    stage.appendChild(fxCanvas);
+    boardFx = null;
     board.appendChild(stage);
     zoomTools = document.createElement('div');
     zoomTools.className = 'zoom-tools';
@@ -936,6 +940,12 @@
     // never huge on a small one.
     const scale = Math.min(26, Math.max(15, cell * 0.5)) / cell;
     core.g.setAttribute('transform', 'translate(' + p.w / 2 + ' ' + -RIM + ') scale(' + fmt(scale) + ')');
+    // The effects layer covers the tray, drawn in the same cells.
+    const dpr = window.devicePixelRatio || 1;
+    Object.assign(fxCanvas.style, { left: left + 'px', top: top + 'px', width: tw + 'px', height: th + 'px' });
+    fxCanvas.width = Math.round(tw * dpr);
+    fxCanvas.height = Math.round(th * dpr);
+    lay = { side, topPad, cell, tw, th, dpr, coreR: scale * cell };
     // Big boards can be zoomed until a cell is a comfortable tap size.
     view.box = { left, top, width: tw, height: th };
     view.maxZ = Math.max(1, 46 / cell);
@@ -948,6 +958,205 @@
   const view = { z: 1, x: 0, y: 0, maxZ: 1, box: null };
   let stage = null;
   let zoomTools = null;
+  let fxCanvas = null;
+  let lay = null;
+  let boardFx = null;
+
+  /*
+   * The board's finale, when the last trace is in. Pulses of light race
+   * around the bus from both sides into the core and streaks pour in from
+   * the edges of the tray. A wave of light floods the chip outward from
+   * the core until every tile glows, the bus goes white-hot, the core
+   * swells, and lightning arcs off it. Then the same burst as the cube:
+   * a flash over the whole screen, shockwaves, and sparks, all from the
+   * core. The chip keeps pulsing behind the win card.
+   */
+  function startBoardFinale() {
+    if (reduceMotion || !fxCanvas || !lay) return;
+    const p = game.puzzle;
+    const now = performance.now();
+    const colors = game.palette.map((c) => COLORS[c]);
+    // Show the whole board for it.
+    view.z = 1;
+    applyView();
+    const P = 2 * (p.w + p.h + 4 * RIM); // the bus's length, in cells
+    const pulses = [];
+    for (let k = 0; k < 22; k++) {
+      pulses.push({ from: Math.random() * P, at: now + Math.random() * 900, ms: 500 + Math.random() * 300, color: colors[k % colors.length] });
+    }
+    const streaks = [];
+    for (let k = 0; k < 18; k++) {
+      const side = k % 4;
+      const along = Math.random();
+      const x = side === 0 ? along * lay.tw : side === 1 ? lay.tw + 30 : side === 2 ? along * lay.tw : -30;
+      const y = side === 0 ? -30 : side === 1 ? along * lay.th : side === 2 ? lay.th + 30 : along * lay.th;
+      streaks.push({ x, y, at: now + Math.random() * 800, ms: 300 + Math.random() * 160, color: colors[k % colors.length] });
+    }
+    boardFx = { start: now, pulses, streaks, P, burst: false, epoch: game.epoch };
+    finaleSoundAndBuzz();
+    requestAnimationFrame(boardFxFrame);
+  }
+
+  // A point on the bus, d cells clockwise from the core (in tray pixels).
+  function busPoint(d) {
+    const p = game.puzzle;
+    const L = -RIM;
+    const T = -RIM;
+    const R = p.w + RIM;
+    const B = p.h + RIM;
+    const half = R - p.w / 2;
+    const segs = [
+      [p.w / 2, T, 1, 0, half],
+      [R, T, 0, 1, B - T],
+      [R, B, -1, 0, R - L],
+      [L, B, 0, -1, B - T],
+      [L, T, 1, 0, p.w / 2 - L],
+    ];
+    let left = ((d % boardFx.P) + boardFx.P) % boardFx.P;
+    for (const [x, y, dx, dy, len] of segs) {
+      if (left <= len) return cellPx(x + dx * left, y + dy * left);
+      left -= len;
+    }
+    return cellPx(p.w / 2, T);
+  }
+
+  function cellPx(x, y) {
+    return [(lay.side + x) * lay.cell, (lay.topPad + y) * lay.cell];
+  }
+
+  function boardFxFrame(now) {
+    const f = boardFx;
+    if (!f || f.epoch !== game.epoch || !fxCanvas || screen !== 'play') return;
+    const p = game.puzzle;
+    const ctx = fxCanvas.getContext('2d');
+    const t = now - f.start;
+    const glow = glowAt(f, now);
+    const [r, g, b] = labRgb();
+    const lab = 'rgb(' + r + ',' + g + ',' + b + ')';
+    const c = lay.cell;
+    const [cx, cy] = cellPx(p.w / 2, -RIM);
+    ctx.setTransform(lay.dpr, 0, 0, lay.dpr, 0, 0);
+    ctx.clearRect(0, 0, lay.tw, lay.th);
+    // A glow swelling around the core.
+    const halo = Math.max(lay.tw, lay.th) * (0.25 + 0.5 * glow);
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, halo);
+    grad.addColorStop(0, 'rgba(255,255,255,' + (0.5 * glow).toFixed(3) + ')');
+    grad.addColorStop(0.3, 'rgba(' + r + ',' + g + ',' + b + ',' + (0.35 * glow).toFixed(3) + ')');
+    grad.addColorStop(1, 'rgba(' + r + ',' + g + ',' + b + ',0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, lay.tw, lay.th);
+    // The wave of light flooding the chip from the core.
+    const reach = Math.hypot(p.w / 2 + 1, p.h + RIM + 1);
+    const front = (Math.max(0, t - 300) / (FINALE.burst - 300)) * reach * 1.08;
+    for (let y = 0; y < p.h; y++) {
+      for (let x = 0; x < p.w; x++) {
+        const d = Math.hypot(x + 0.5 - p.w / 2, y + 0.5 + RIM);
+        let a;
+        if (t < FINALE.burst) {
+          const lit = Math.max(0, Math.min(1, (front - d) / 2.5));
+          a = lit * (0.25 + 0.55 * glow) + 0.7 * Math.exp(-Math.pow((d - front) / 0.9, 2));
+        } else a = 0.25 + 0.5 * glow;
+        if (a < 0.01) continue;
+        const [px, py] = cellPx(x + 0.07, y + 0.07);
+        ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + Math.min(0.95, a).toFixed(3) + ')';
+        ctx.fillRect(px, py, 0.86 * c, 0.86 * c);
+      }
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    // The bus, heating to white.
+    const [bx0, by0] = cellPx(-RIM, -RIM);
+    const [bx1, by1] = cellPx(p.w + RIM, p.h + RIM);
+    ctx.strokeStyle = 'rgba(255,255,255,' + Math.min(1, 0.15 + glow).toFixed(2) + ')';
+    ctx.lineWidth = 1 + 3 * glow;
+    ctx.strokeRect(bx0, by0, bx1 - bx0, by1 - by0);
+    // Pulses racing along the bus, the shorter way, into the core.
+    f.pulses.forEach((pl) => {
+      const u = (now - pl.at) / pl.ms;
+      if (u < 0 || u > 1) return;
+      const target = pl.from > f.P / 2 ? f.P : 0;
+      const e = u * u;
+      const head = pl.from + (target - pl.from) * e;
+      const tail = pl.from + (target - pl.from) * Math.max(0, e - 0.25);
+      ctx.strokeStyle = pl.color;
+      ctx.lineWidth = Math.max(3, c * 0.18);
+      ctx.beginPath();
+      for (let k = 0; k <= 8; k++) {
+        const q = busPoint(tail + ((head - tail) * k) / 8);
+        if (k) ctx.lineTo(q[0], q[1]);
+        else ctx.moveTo(q[0], q[1]);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(1.2, c * 0.06);
+      ctx.stroke();
+    });
+    // Streaks pouring in from the edges.
+    f.streaks.forEach((sk) => {
+      const u = (now - sk.at) / sk.ms;
+      if (u < 0 || u > 1.15) return;
+      const e = Math.min(1, u) * Math.min(1, u);
+      const x = sk.x + (cx - sk.x) * e;
+      const y = sk.y + (cy - sk.y) * e;
+      const back = Math.max(0, e - 0.28);
+      ctx.globalAlpha = u > 1 ? Math.max(0, 1 - (u - 1) / 0.15) : 1;
+      ctx.strokeStyle = sk.color;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(sk.x + (cx - sk.x) * back, sk.y + (cy - sk.y) * back);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+    // Lightning off the core, more and more as it charges.
+    if (t > FINALE.spinFrom && t < FINALE.burst) {
+      const q = (t - FINALE.spinFrom) / (FINALE.burst - FINALE.spinFrom);
+      const count = Math.round(1 + q * q * 8);
+      const size = Math.min(lay.tw, lay.th);
+      ctx.lineJoin = 'bevel';
+      for (let k = 0; k < count; k++) {
+        // Mostly downward, over the chip.
+        const a = Math.PI * (0.05 + 0.9 * Math.random());
+        const r1 = size * (0.12 + Math.random() * 0.35 * (0.4 + q));
+        ctx.beginPath();
+        for (let j = 0; j <= 6; j++) {
+          const rr = lay.coreR + ((r1 - lay.coreR) * j) / 6;
+          const aa = a + (Math.random() - 0.5) * 0.4;
+          const x = cx + Math.cos(aa) * rr;
+          const y = cy + Math.sin(aa) * rr;
+          if (j) ctx.lineTo(x, y);
+          else ctx.moveTo(x, y);
+        }
+        ctx.globalAlpha = 0.5 + 0.5 * Math.random();
+        ctx.strokeStyle = Math.random() < 0.5 ? '#ffffff' : lab;
+        ctx.lineWidth = 1.2 + q * 1.6;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    // The core, swelling and white-hot.
+    const swell = lay.coreR * (1 + 0.9 * glow);
+    const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, swell * 1.6);
+    coreGrad.addColorStop(0, 'rgba(255,255,255,' + Math.min(1, 0.3 + glow).toFixed(2) + ')');
+    coreGrad.addColorStop(0.45, 'rgba(' + r + ',' + g + ',' + b + ',' + (0.8 * glow).toFixed(2) + ')');
+    coreGrad.addColorStop(1, 'rgba(' + r + ',' + g + ',' + b + ',0)');
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, swell * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    if (!f.burst && t >= FINALE.burst) {
+      f.burst = true;
+      const rect = fxCanvas.getBoundingClientRect();
+      const k = rect.width / lay.tw;
+      finaleBurst(rect.left + cx * k, rect.top + cy * k);
+    }
+    requestAnimationFrame(boardFxFrame);
+  }
 
   // Keeps the board in view: centered while it fits, edge to edge when
   // zoomed past the screen.
@@ -1113,10 +1322,11 @@
     if (isCube()) cubeCharge(color, full);
     else {
       updateCore();
-      coreBurst(color, full);
+      coreBurst(color, full && reduceMotion);
+      if (full) startBoardFinale();
     }
     if (full) {
-      if (!isCube()) Sound.overload();
+      if (reduceMotion) Sound.overload();
       win();
     } else Sound.zap(game.absorbed / total);
   }
@@ -1426,8 +1636,8 @@
       save();
     }
     updateHud();
-    const finale = isCube() && !reduceMotion;
-    if (finale) say('Every face clear. Powering up the cube!');
+    const finale = !reduceMotion;
+    if (finale) say(isCube() ? 'Every face clear. Powering up the cube!' : 'Board clear. Powering up the core!');
     else {
       buzz([30, 50, 30, 50, 120]);
       say(stars === 3 ? 'Core fully charged. Not a single short!' : 'Core fully charged! Great work!');
@@ -1435,7 +1645,10 @@
     const epoch = game.epoch;
     setTimeout(() => {
       if (!game.done || epoch !== game.epoch || screen !== 'play') return;
-      if (finale) say(stars === 3 ? 'Cube fully powered. Not a single short!' : 'Cube fully powered! Great work!');
+      if (finale) {
+        const what = isCube() ? 'Cube' : 'Core';
+        say(stars === 3 ? what + ' fully powered. Not a single short!' : what + ' fully powered! Great work!');
+      }
       else {
         Sound.win();
         confetti();
@@ -2519,9 +2732,13 @@
     cube.finale = { start: now, streaks, burst: false, spin: 0 };
     cube.spin.vx = cube.spin.vy = 0;
     cube.focus = null;
+    finaleSoundAndBuzz();
+  }
+
+  // The finale's rising charge and boom, and pulses that speed up with the
+  // charge, then one long buzz on the burst. Shared by cubes and boards.
+  function finaleSoundAndBuzz() {
     Sound.finale(FINALE.burst / 1000);
-    // Pulses that speed up with the charge, then one long buzz on the
-    // burst.
     const pattern = [];
     let t = 0;
     let gap = 260;
@@ -2536,7 +2753,10 @@
 
   // How far the power-up has come, 0 to 1, and a slow pulse afterward.
   function finaleGlow(now) {
-    const f = cube.finale;
+    return glowAt(cube.finale, now);
+  }
+
+  function glowAt(f, now) {
     if (!f) return 0;
     const t = now - f.start;
     if (t < FINALE.burst) return Math.pow(Math.max(0, (t - 200) / (FINALE.burst - 200)), 1.15);
@@ -2561,7 +2781,10 @@
     });
     if (!f.burst && t >= FINALE.burst) {
       f.burst = true;
-      finaleBurst();
+      const r = cube.canvas.getBoundingClientRect();
+      const [lr, lg, lb] = labRgb();
+      burst(cube.cx, cube.cy, 'rgb(' + lr + ',' + lg + ',' + lb + ')', 70, 0.7);
+      finaleBurst(r.left + cube.cx, r.top + cube.cy);
     }
   }
 
@@ -2641,12 +2864,8 @@
 
   // The burst: a flash over the whole screen, shockwave rings, and sparks,
   // drawn on the full-screen effects layer.
-  function finaleBurst() {
-    const r = cube.canvas.getBoundingClientRect();
-    const x = r.left + cube.cx;
-    const y = r.top + cube.cy;
+  function finaleBurst(x, y) {
     const [lr, lg, lb] = labRgb();
-    burst(cube.cx, cube.cy, 'rgb(' + lr + ',' + lg + ',' + lb + ')', 70, 0.7);
     const canvas = $('confetti');
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
@@ -2895,7 +3114,10 @@
   window.__unfoldTest = {
     cubeZoom: () => cube.zoom,
     facesCleared: () => cube.cleared.size,
-    finaleTime: () => (cube.finale ? performance.now() - cube.finale.start : -1),
+    finaleTime: () => {
+      const f = cube.finale || boardFx;
+      return f && game.done ? performance.now() - f.start : -1;
+    },
     turn(dx, dy) {
       cubeTurn(dx, dy);
       cubeDraw(performance.now());
