@@ -684,88 +684,24 @@
         return { cells, head, d, lane, blk: Array.from(blk), first };
       })
     );
-    const pick = ways.map((v) => (v[0] && v[1] ? rng.int(2) : v[0] ? 0 : 1));
+    // Start each arrow pointing the way with fewer arrows in its lane (a
+    // coin flip on a tie). Few blockers means few loops to untangle, which
+    // is what keeps big boards quick to build.
+    const pick = ways.map((v) => {
+      if (!(v[0] && v[1])) return v[0] ? 0 : 1;
+      const a = v[0].blk.length;
+      const b = v[1].blk.length;
+      return a === b ? rng.int(2) : a < b ? 0 : 1;
+    });
     // A path that can't point either way is left out; its cells stay empty.
     const alive = ways.map((v) => !!(v[0] || v[1]));
 
-    // Clears the board in waves. Returns the number of waves and the arrows
-    // left stuck in loops.
-    function waves() {
-      const indeg = new Int32Array(n);
-      const after = Array.from({ length: n }, () => []);
-      for (let i = 0; i < n; i++) {
-        if (!alive[i]) continue;
-        ways[i][pick[i]].blk.forEach((j) => {
-          if (!alive[j]) return;
-          indeg[i]++;
-          after[j].push(i);
-        });
-      }
-      let wave = [];
-      for (let i = 0; i < n; i++) if (alive[i] && !indeg[i]) wave.push(i);
-      let count = 0;
-      const done = new Array(n).fill(false);
-      while (wave.length) {
-        count++;
-        const next = [];
-        wave.forEach((j) => {
-          done[j] = true;
-          after[j].forEach((i) => --indeg[i] === 0 && next.push(i));
-        });
-        wave = next;
-      }
-      const stuck = [];
-      for (let i = 0; i < n; i++) if (alive[i] && !done[i]) stuck.push(i);
-      return { count, stuck };
-    }
-
-    // The first live arrow in an arrow's lane.
-    function firstAlive(v) {
-      if (v.first >= 0 && alive[v.first]) return v.first;
-      for (const c of v.lane) {
-        const j = owner[c];
-        if (j >= 0 && alive[j]) return j;
-      }
-      return -1;
-    }
-
-    function cost() {
-      let free = 0;
-      let laneSum = 0;
-      let live = 0;
-      let convoy = 0;
-      const heads = new Map();
-      for (let i = 0; i < n; i++) {
-        if (!alive[i]) continue;
-        const v = ways[i][pick[i]];
-        live++;
-        laneSum += v.lane.length;
-        heads.set(v.head, v.d);
-        const first = v.blk.length ? firstAlive(v) : -1;
-        if (first < 0) free++;
-        else {
-          const u = ways[first][pick[first]];
-          if (u.d === v.d && g.sameLine(u.head, v.head, v.d)) convoy++;
-        }
-      }
-      // Side by side: a neighboring head pointing the same way.
-      let pairs = 0;
-      for (let i = 0; i < n; i++) {
-        if (!alive[i]) continue;
-        const v = ways[i][pick[i]];
-        const next = g.side(v.head, v.d);
-        if (next >= 0 && heads.get(next) === v.d) pairs++;
-      }
-      const r = waves();
-      return r.stuck.length * 1000 + convoy * 4 + pairs * 3 + hard * (free * 6 - r.count * 1.5 - (laneSum / Math.max(1, live)) * 0.6);
-    }
-
-    const flippable = [];
-    for (let i = 0; i < n; i++) if (ways[i][0] && ways[i][1]) flippable.push(i);
-    const canFlip = new Set(flippable);
+    const canFlip = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (ways[i][0] && ways[i][1]) canFlip[i] = 1;
 
     // The arrows that are part of a loop (not just stuck behind one): those
     // in a group where each one is blocked, through the others, by itself.
+    // Found with Tarjan's method, written without recursion.
     function looped() {
       const index = new Int32Array(n).fill(-1);
       const low = new Int32Array(n);
@@ -775,7 +711,6 @@
       let next = 0;
       for (let root = 0; root < n; root++) {
         if (!alive[root] || index[root] >= 0) continue;
-        // Iterative Tarjan: each frame is [arrow, position in its blockers].
         const work = [[root, 0]];
         index[root] = low[root] = next++;
         stack.push(root);
@@ -815,39 +750,181 @@
       return out;
     }
 
-    // Untangle first: flip arrows that are in loops, keeping any flip that
-    // doesn't leave more arrows in loops.
-    let loops = looped();
-    for (let k = 0; k < n * 20 && loops.length; k++) {
-      const options = loops.filter((i) => canFlip.has(i));
-      if (!options.length) break;
-      const i = options[rng.int(options.length)];
-      pick[i] ^= 1;
-      const after = looped();
-      if (after.length <= loops.length) loops = after;
-      else pick[i] ^= 1;
+    // Whether arrow i sits in a loop pointing its current way: can
+    // anything blocking it be blocked, through others, by i itself? A flip
+    // only changes i's own blockers, so a flip can make a loop only through
+    // i, and this small search is all it takes to check one.
+    const seen = new Int32Array(n);
+    let mark = 0;
+    function inLoop(i) {
+      mark++;
+      const stack = [];
+      for (const j of ways[i][pick[i]].blk) if (alive[j]) stack.push(j);
+      while (stack.length) {
+        const j = stack.pop();
+        if (j === i) return true;
+        if (seen[j] === mark) continue;
+        seen[j] = mark;
+        for (const k of ways[j][pick[j]].blk) if (alive[k] && seen[k] !== mark) stack.push(k);
+      }
+      return false;
     }
-    // Last resort: take out an arrow that is in a loop and leave its cells
-    // empty. Removing an arrow only frees others, so this always ends.
+
+    /*
+     * Untangling, in three tiers, cheapest first:
+     *  1. Flip an arrow that sits in a loop if the flip takes it out of
+     *     every loop. That never adds a loop anywhere else.
+     *  2. If loops remain, try flips that don't add to the number of arrows
+     *     in loops, which can break loops that need two flips together.
+     *  3. If loops still won't break (some run through arrows that can
+     *     only point one way), take those arrows out, leaving their cells
+     *     empty, then any arrow still in a loop, one at a time, with the
+     *     cheap pass in between. Removing an arrow only frees others, so
+     *     this always ends.
+     */
+    let loops = looped();
+    function quickUntangle() {
+      for (let round = 0; round < 8 && loops.length; round++) {
+        let fixed = 0;
+        shuffle(loops.slice(), rng).forEach((i) => {
+          if (!canFlip[i] || !inLoop(i)) return;
+          pick[i] ^= 1;
+          if (inLoop(i)) pick[i] ^= 1;
+          else fixed++;
+        });
+        const before = loops.length;
+        loops = looped();
+        if (!fixed || loops.length >= before) break;
+      }
+    }
+    function untangle() {
+      quickUntangle();
+      let best = loops.length;
+      let idle = 0;
+      for (let k = 0; k < n * 4 && loops.length && idle < 30 + loops.length; k++) {
+        const options = loops.filter((i) => canFlip[i]);
+        if (!options.length) break;
+        const i = options[rng.int(options.length)];
+        pick[i] ^= 1;
+        const after = looped();
+        if (after.length <= loops.length) loops = after;
+        else pick[i] ^= 1;
+        if (loops.length < best) {
+          best = loops.length;
+          idle = 0;
+        } else idle++;
+      }
+    }
+    untangle();
+    // Arrows that can only point one way and sit in a loop all go at once;
+    // after that, one arrow at a time, with the quick pass in between.
+    if (loops.length) {
+      loops.forEach((i) => !canFlip[i] && (alive[i] = false));
+      loops = looped();
+      quickUntangle();
+    }
     while (loops.length) {
       alive[loops[rng.int(loops.length)]] = false;
       loops = looped();
+      quickUntangle();
     }
 
-    // Then improve: flip arrows one at a time, keeping changes that don't
-    // make the board worse (and never bring a loop back). Big boards get a
-    // smaller budget per arrow so they still build quickly.
-    let current = cost();
-    const perArrow = (12 + 28 * hard) * Math.min(1, 140 / Math.max(1, n));
-    const steps = flippable.length ? Math.round(n * Math.max(4, perArrow)) : 0;
+    /*
+     * Then improve: flip arrows one at a time and keep a flip when it
+     * doesn't make the board worse and doesn't make a loop. The score adds
+     * up, for every arrow: being free at the start, being in a convoy (its
+     * first blocker heads the same way along the same line), and having a
+     * neighbor beside it heading the same way; minus long lanes. Each part
+     * depends on only a few arrows, so a flip is scored from just the ones
+     * it touches.
+     */
+    let live = 0;
+    for (let i = 0; i < n; i++) if (alive[i]) live++;
+    // The first live arrow each way would hit (fixed now no more arrows
+    // are taken out), and who would hit each arrow first.
+    const firstHit = ways.map((v, i) =>
+      v.map((w) => {
+        if (!w || !alive[i]) return -1;
+        for (const c of w.lane) {
+          const j = owner[c];
+          if (j >= 0 && alive[j]) return j;
+        }
+        return -1;
+      })
+    );
+    const hitBy = Array.from({ length: n }, () => []);
+    for (let j = 0; j < n; j++) for (let w = 0; w < 2; w++) if (firstHit[j][w] >= 0) hitBy[firstHit[j][w]].push(j * 2 + w);
+    const headOf = new Int32Array(g.count).fill(-1);
+    for (let i = 0; i < n; i++) if (alive[i]) headOf[ways[i][pick[i]].head] = i;
+    const now = (i) => ways[i][pick[i]];
+
+    const W_CONVOY = 4;
+    const W_PAIR = 3;
+    const W_FREE = 6 * hard;
+    const W_LANE = (0.9 * hard) / Math.max(1, live);
+
+    function convoyOf(j) {
+      const u = firstHit[j][pick[j]];
+      if (u < 0) return 0;
+      const a = now(j);
+      const b = now(u);
+      return b.d === a.d && g.sameLine(b.head, a.head, a.d) ? 1 : 0;
+    }
+
+    function pairOf(j) {
+      const a = now(j);
+      const next = g.side(a.head, a.d);
+      if (next < 0) return 0;
+      const k = headOf[next];
+      return k >= 0 && now(k).d === a.d ? 1 : 0;
+    }
+
+    // Everything whose score a flip of i can change: i, the arrows that hit
+    // i first (their convoy depends on i's direction), and arrows whose
+    // head sits just before either end of i (their pair depends on i).
+    const touched = [];
+    function gather(i) {
+      touched.length = 0;
+      touched.push(i);
+      for (const code of hitBy[i]) {
+        const j = code >> 1;
+        if (alive[j] && pick[j] === (code & 1)) touched.push(j);
+      }
+      for (let w = 0; w < 2; w++) {
+        const h = ways[i][w] && ways[i][w].head;
+        if (h == null) continue;
+        for (const d of [0, 3]) {
+          const c = g.nb[h * 4 + d];
+          if (c >= 0 && headOf[c] >= 0 && headOf[c] !== i) touched.push(headOf[c]);
+        }
+      }
+    }
+
+    function localScore(i) {
+      let total = 0;
+      for (const j of touched) total += W_CONVOY * convoyOf(j) + W_PAIR * pairOf(j);
+      const v = now(i);
+      total += (firstHit[i][pick[i]] < 0 ? W_FREE : 0) - v.lane.length * W_LANE;
+      return total;
+    }
+
+    function flip(i) {
+      headOf[now(i).head] = -1;
+      pick[i] ^= 1;
+      headOf[now(i).head] = i;
+    }
+
+    const flippable = [];
+    for (let i = 0; i < n; i++) if (alive[i] && canFlip[i]) flippable.push(i);
+    const steps = flippable.length ? Math.round(n * (12 + 28 * hard)) : 0;
     for (let k = 0; k < steps; k++) {
       const i = flippable[rng.int(flippable.length)];
-      if (!alive[i]) continue;
-      pick[i] ^= 1;
-      const next = cost();
-      if (next <= current) current = next;
-      else pick[i] ^= 1;
+      gather(i);
+      const before = localScore(i);
+      flip(i);
+      if (localScore(i) > before || inLoop(i)) flip(i);
     }
+
     let filled = 0;
     const arrows = [];
     ways.forEach((v, i) => {
