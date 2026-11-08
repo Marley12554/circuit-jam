@@ -1124,7 +1124,7 @@
     minH: 4,
     maxH: 40,
     minFace: 3,
-    maxFace: 10,
+    maxFace: 20,
     density: [0.65, 0.85, 0.98], // Roomy, Snug, Packed
     length: [[2, 3], [2, 6], [3, 10]], // Short, Mixed, Long
     bend: [0, 0.35, 0.65], // Straight, Bendy, Twisty

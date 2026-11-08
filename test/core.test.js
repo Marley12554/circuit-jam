@@ -166,7 +166,8 @@ test('share codes round-trip and reject bad input', () => {
   const cube = { shape: 'cube', n: 6, density: 2, length: 1, bend: 1, seed: 77 };
   assert.strictEqual(Core.codeOf(cube), 'C06211-77');
   assert.deepStrictEqual(Core.parseCode('c06211-77'), cube);
-  assert.strictEqual(Core.parseCode('C11211-77'), null); // face too big
+  assert.strictEqual(Core.parseCode('C21211-77'), null); // face too big
+  assert.strictEqual(Core.parseCode('C20211-77').n, 20); // the biggest cube
   assert.strictEqual(Core.parseCode('C02211-77'), null); // face too small
 });
 

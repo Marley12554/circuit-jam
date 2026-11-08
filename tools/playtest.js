@@ -259,6 +259,59 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.context().close();
   }
 
+  // The biggest cube: zoom buttons, a two-finger pinch, and a tap while
+  // zoomed in.
+  {
+    const p = await open({ sound: false, custom: { shape: 'cube', n: 20, w: 8, h: 10, density: 2, length: 1, bend: 1 } });
+    await p.click('#customBtn');
+    check((await p.textContent('#nOut')) === '20', 'cube faces go up to 20');
+    check(await p.isDisabled('.stepper[data-key="n"] [data-step="1"]'), 'and no further');
+    const t0 = Date.now();
+    await p.click('#mixBtn');
+    await p.waitForFunction(() => { const r = JSON.parse(localStorage.getItem('unfold-v1')).run; return r && r.puzzle.kind === 'cube'; }, null, { timeout: 20000 });
+    console.log('     (20-face cube ready in ' + (Date.now() - t0) + ' ms)');
+    const zoom = () => p.evaluate(() => window.__unfoldTest.cubeZoom());
+    await p.click('[data-zoom="in"]');
+    check((await zoom()) > 1.4, 'zoom in enlarges the cube');
+    await p.click('[data-zoom="fit"]');
+    check(Math.abs((await zoom()) - 1) < 0.01, 'fit shows the whole cube again');
+    // A pinch made of two touch pointers spreading apart.
+    const before = await num(p, 'leftCount');
+    await p.evaluate(() => {
+      const c = document.querySelector('.cube-canvas');
+      const r = c.getBoundingClientRect();
+      const mid = [r.left + r.width / 2, r.top + r.height / 2];
+      const ev = (type, id, x, y) => c.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, isPrimary: id === 1 }));
+      ev('pointerdown', 1, mid[0] - 30, mid[1]);
+      ev('pointerdown', 2, mid[0] + 30, mid[1]);
+      for (let k = 1; k <= 6; k++) {
+        ev('pointermove', 1, mid[0] - 30 - k * 15, mid[1]);
+        ev('pointermove', 2, mid[0] + 30 + k * 15, mid[1]);
+      }
+      ev('pointerup', 1, mid[0] - 120, mid[1]);
+      ev('pointerup', 2, mid[0] + 120, mid[1]);
+    });
+    check((await zoom()) > 2, 'a pinch zooms the cube: ' + (await zoom()).toFixed(2));
+    check((await num(p, 'leftCount')) === before, 'a pinch never taps a trace');
+    // Tap a free trace that is on screen at this zoom.
+    const target = await p.evaluate(() => {
+      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+      const free = window.UnfoldCore.freeArrows(run.puzzle, run.puzzle.arrows.map((a, i) => run.gone.includes(i)));
+      const r = document.querySelector('.cube-canvas').getBoundingClientRect();
+      for (const i of free) {
+        const pt = window.__unfoldTest.cubePoint(i);
+        if (pt && pt[0] > r.left + 20 && pt[0] < r.right - 60 && pt[1] > r.top + 60 && pt[1] < r.bottom - 20) return pt;
+      }
+      return null;
+    });
+    if (target) {
+      await p.mouse.click(target[0], target[1]);
+      await p.waitForTimeout(60);
+      check((await num(p, 'leftCount')) === before - 1, 'tapping a zoomed-in cube clears the trace');
+    } else check(false, 'found a free cube trace on screen while zoomed');
+    await p.context().close();
+  }
+
   // The biggest flat board: zoom in and tap while zoomed.
   {
     const p = await open({ sound: false, custom: { shape: 'flat', n: 5, w: 30, h: 40, density: 2, length: 1, bend: 1 } });
@@ -266,35 +319,36 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.click('#mixBtn');
     await p.waitForSelector('.arrow', { timeout: 20000 });
     check(!(await p.isHidden('.zoom-tools')), 'a 30 by 40 board offers zoom');
-    await p.click('[data-zoom="in"]');
-    await p.click('[data-zoom="in"]');
     // Read the zoom the page set (computed styles lag a frame with
     // reduced motion, which gives every property a tiny transition).
     const zoomOf = () => p.evaluate(() => Number(/scale\(([\d.]+)\)/.exec(document.querySelector('.stage').style.transform)[1]));
+    await p.click('[data-zoom="in"]');
+    await p.click('[data-zoom="in"]');
     const scale = await zoomOf();
     check(scale > 1.5, 'zoom in scales the board: ' + scale.toFixed(2));
+    await p.click('[data-zoom="fit"]');
+    await p.waitForTimeout(50); // let the board settle before measuring
     const total = await num(p, 'leftCount');
-    // A free trace that is on screen at this zoom.
-    const target = await p.evaluate(() => {
+    // Zoom in with the wheel right on a free trace, which keeps it under
+    // the pointer, then tap it.
+    const cellOf = () => p.evaluate(() => {
       const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
-      const free = window.UnfoldCore.freeArrows(run.puzzle, null);
+      const i = window.UnfoldCore.freeArrows(run.puzzle, null)[0];
       const svg = document.querySelector('.arrows').getBoundingClientRect();
-      const board = document.getElementById('board').getBoundingClientRect();
       const k = svg.width / run.puzzle.w;
-      for (const i of free) {
-        for (const [x, y] of run.puzzle.arrows[i].cells) {
-          const px = svg.left + (x + 0.5) * k;
-          const py = svg.top + (y + 0.5) * k;
-          if (px > board.left + 10 && px < board.right - 60 && py > board.top + 10 && py < board.bottom - 10) return [px, py];
-        }
-      }
-      return null;
+      const [x, y] = run.puzzle.arrows[i].cells[0];
+      return [svg.left + (x + 0.5) * k, svg.top + (y + 0.5) * k];
     });
-    if (target) {
-      await p.mouse.click(target[0], target[1]);
-      await p.waitForTimeout(60);
-      check((await num(p, 'leftCount')) === total - 1, 'tapping while zoomed clears the trace');
-    } else check(false, 'found a free trace on screen while zoomed');
+    let pt = await cellOf();
+    await p.mouse.move(pt[0], pt[1]);
+    for (let k = 0; k < 4; k++) await p.mouse.wheel(0, -300);
+    await p.waitForTimeout(100);
+    check((await zoomOf()) > 1.5, 'the wheel zooms the board');
+    await p.waitForTimeout(50);
+    pt = await cellOf();
+    await p.mouse.click(pt[0], pt[1]);
+    await p.waitForTimeout(60);
+    check((await num(p, 'leftCount')) === total - 1, 'tapping while zoomed clears the trace');
     await p.click('[data-zoom="fit"]');
     const fit = await zoomOf();
     check(Math.abs(fit - 1) < 0.01, 'fit shows the whole board again');

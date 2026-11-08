@@ -1197,6 +1197,16 @@
   const pointers = new Map();
   let gesture = null;
 
+  // Keeps getting a pointer's moves even when it leaves the element. Some
+  // pointers can't be captured, which is fine to ignore.
+  function capture(node, id) {
+    try {
+      if (node.setPointerCapture) node.setPointerCapture(id);
+    } catch (e) {
+      /* not an active pointer */
+    }
+  }
+
   function tapAt(e) {
     const [x, y] = pointToCells(e);
     const i = arrowAt(x, y);
@@ -1218,7 +1228,7 @@
       return;
     }
     e.preventDefault();
-    if (board.setPointerCapture) board.setPointerCapture(e.pointerId);
+    capture(board, e.pointerId);
     if (pointers.size === 2) {
       const [a, b] = Array.from(pointers.values());
       gesture = { type: 'pinch', d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, z0: view.z, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], x0: view.x, y0: view.y };
@@ -1698,9 +1708,15 @@
     dpr: 1,
     R: M3.mul(M3.rx(0.45), M3.ry(-0.62)),
     zoom: 1,
+    maxZoom: 1,
+    panX: 0,
+    panY: 0,
+    base: null,
     s: 20,
     cx: 0,
     cy: 0,
+    touches: new Map(),
+    pinch: null,
     routes: [],
     anims: new Map(),
     particles: [],
@@ -1726,8 +1742,34 @@
     board.appendChild(cube.canvas);
     cube.tip = document.createElement('div');
     cube.tip.className = 'cube-tip';
-    cube.tip.textContent = 'Drag to spin';
+    cube.tip.textContent = 'Drag to spin · pinch to zoom';
     board.appendChild(cube.tip);
+    // Zoom buttons, as on big flat boards: in, out, and back to the whole
+    // cube.
+    zoomTools = document.createElement('div');
+    zoomTools.className = 'zoom-tools';
+    zoomTools.innerHTML =
+      '<button type="button" data-zoom="in" aria-label="Zoom in">+</button>' +
+      '<button type="button" data-zoom="out" aria-label="Zoom out">−</button>' +
+      '<button type="button" data-zoom="fit" aria-label="Show the whole cube"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>';
+    zoomTools.querySelectorAll('button').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (b.dataset.zoom === 'fit') {
+          cube.zoom = 1;
+          cube.panX = cube.panY = 0;
+          cubeApplyView();
+        } else cubeZoomAt(b.dataset.zoom === 'in' ? 1.5 : 1 / 1.5, cube.W / 2, cube.H / 2);
+        Sound.tap();
+      })
+    );
+    zoomTools.addEventListener('pointerdown', (e) => e.stopPropagation());
+    board.appendChild(zoomTools);
+    cube.zoom = 1;
+    cube.panX = cube.panY = 0;
+    cube.touches.clear();
+    cube.pinch = null;
+    cube.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     cube.routes = p.arrows.map((a, i) => cubeRoute(i));
     blockedBy = Core.blockers(p);
     cube.anims.clear();
@@ -1752,12 +1794,47 @@
     const meter = 44;
     const n = game.puzzle.n;
     const L = Math.min(W, H - meter);
-    cube.s = (L / (n * 1.85)) * cube.zoom;
-    cube.cx = W / 2;
-    cube.cy = meter + (H - meter) / 2;
-    // The meter sits just above the cube however it is turned.
-    cube.meterY = Math.max(22, cube.cy - n * 0.87 * cube.s * 1.18 - 20);
+    const s = L / (n * 1.85);
+    cube.base = { s, cx: W / 2, cy: meter + (H - meter) / 2 };
+    // The meter sits just above the whole cube however it is turned
+    // (and at the very top once you zoom in).
+    cube.baseMeterY = Math.max(24, cube.base.cy - n * 0.87 * s * 1.18 - 20);
+    // Zoom until a cell is a comfortable size to tap.
+    cube.maxZoom = Math.max(1.5, 46 / s);
+    cubeApplyView();
+  }
+
+  // Applies zoom and pan, keeping the cube's middle on screen.
+  function cubeApplyView() {
+    if (!cube.base) return;
+    cube.zoom = Math.min(cube.maxZoom, Math.max(0.7, cube.zoom));
+    const reach = (game.puzzle.n * cube.base.s * cube.zoom) / 2;
+    const limX = Math.max(0, reach - cube.W * 0.15);
+    const limY = Math.max(0, reach - cube.H * 0.15);
+    cube.panX = Math.min(limX, Math.max(-limX, cube.panX));
+    cube.panY = Math.min(limY, Math.max(-limY, cube.panY));
+    cube.s = cube.base.s * cube.zoom;
+    cube.cx = cube.base.cx + cube.panX;
+    cube.cy = cube.base.cy + cube.panY;
+    cube.meterY = cube.zoom > 1.01 ? 26 : cube.baseMeterY;
+    if (zoomTools) {
+      zoomTools.querySelector('[data-zoom="in"]').disabled = cube.zoom >= cube.maxZoom - 0.01;
+      zoomTools.querySelector('[data-zoom="out"]').disabled = cube.zoom <= 0.71;
+      zoomTools.querySelector('[data-zoom="fit"]').disabled = Math.abs(cube.zoom - 1) < 0.01 && !cube.panX && !cube.panY;
+    }
     cubeKick();
+  }
+
+  // Zooms by a factor, keeping the point under (px, py) where it is.
+  function cubeZoomAt(factor, px, py) {
+    if (cube.tip) cube.tip.style.opacity = '0';
+    const z0 = cube.zoom;
+    const z1 = Math.min(cube.maxZoom, Math.max(0.7, z0 * factor));
+    const k = z1 / z0;
+    cube.panX = px - cube.base.cx - (px - cube.cx) * k;
+    cube.panY = py - cube.base.cy - (py - cube.cy) * k;
+    cube.zoom = z1;
+    cubeApplyView();
   }
 
   // Where a 3D point lands on screen, and how much nearer points grow.
@@ -2052,6 +2129,11 @@
     const R = 15;
     const lab = getComputedStyle(document.documentElement).getPropertyValue('--lab').trim() || '#2fe6b4';
     const gap = 0.08;
+    // A dark backing keeps the meter readable over the cube when zoomed.
+    ctx.beginPath();
+    ctx.arc(x, y, R + 7, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(10, 31, 36, 0.9)';
+    ctx.fill();
     ctx.lineWidth = 4;
     ctx.lineCap = 'butt';
     for (let k = 0; k < CHARGE_CELLS; k++) {
@@ -2308,20 +2390,48 @@
     return [e.clientX - r.left, e.clientY - r.top];
   }
 
-  // Drag to spin; a press that hardly moves is a tap.
+  /*
+   * Pointers on the cube. One finger (or the left mouse button) spins it;
+   * a press that hardly moves is a tap. Two fingers pinch to zoom and
+   * drag to pan. With a mouse, the wheel zooms and a right-button or
+   * Shift drag pans.
+   */
   function cubeDown(e) {
-    if (!cube.canvas || e.button > 0 || !e.isPrimary) return;
+    if (!cube.canvas) return;
     e.preventDefault();
-    if (cube.canvas.setPointerCapture) cube.canvas.setPointerCapture(e.pointerId);
+    capture(cube.canvas, e.pointerId);
     const [x, y] = canvasPoint(e);
-    cube.drag = { id: e.pointerId, x0: x, y0: y, lx: x, ly: y, lt: performance.now(), moved: false };
+    cube.touches.set(e.pointerId, [x, y]);
     cube.spin.vx = cube.spin.vy = 0;
     cube.focus = null;
+    if (cube.touches.size === 2) {
+      // A second finger turns the gesture into a pinch.
+      const [a, b] = Array.from(cube.touches.values());
+      cube.drag = null;
+      board.classList.remove('spinning');
+      cube.pinch = { d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, z0: cube.zoom, m: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] };
+      return;
+    }
+    if (cube.touches.size > 2) return;
+    const pan = e.button === 2 || e.button === 1 || e.shiftKey;
+    cube.drag = { id: e.pointerId, x0: x, y0: y, lx: x, ly: y, lt: performance.now(), moved: false, pan };
   }
 
   function cubeMove(e) {
     if (!cube.canvas) return;
     const [x, y] = canvasPoint(e);
+    if (cube.touches.has(e.pointerId)) cube.touches.set(e.pointerId, [x, y]);
+    if (cube.pinch && cube.touches.size >= 2) {
+      const [a, b] = Array.from(cube.touches.values());
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      cube.panX += m[0] - cube.pinch.m[0];
+      cube.panY += m[1] - cube.pinch.m[1];
+      cube.pinch.m = m;
+      cubeZoomAt((cube.pinch.z0 * (d / cube.pinch.d0)) / cube.zoom, m[0], m[1]);
+      if (cube.tip) cube.tip.style.opacity = '0';
+      return;
+    }
     const d = cube.drag;
     if (d && d.id === e.pointerId) {
       if (!d.moved && Math.hypot(x - d.x0, y - d.y0) > 7) {
@@ -2330,16 +2440,22 @@
         cubeHover(-1);
       }
       if (d.moved) {
-        const now = performance.now();
-        const dt = Math.max(1, now - d.lt);
-        const dx = (x - d.lx) * SPIN;
-        const dy = (y - d.ly) * SPIN;
-        cubeTurn(dx, dy);
-        cube.spin.vx = cube.spin.vx * 0.5 + (dx / dt) * 0.5;
-        cube.spin.vy = cube.spin.vy * 0.5 + (dy / dt) * 0.5;
+        if (d.pan) {
+          cube.panX += x - d.lx;
+          cube.panY += y - d.ly;
+          cubeApplyView();
+        } else {
+          const now = performance.now();
+          const dt = Math.max(1, now - d.lt);
+          const dx = (x - d.lx) * SPIN;
+          const dy = (y - d.ly) * SPIN;
+          cubeTurn(dx, dy);
+          cube.spin.vx = cube.spin.vx * 0.5 + (dx / dt) * 0.5;
+          cube.spin.vy = cube.spin.vy * 0.5 + (dy / dt) * 0.5;
+          d.lt = now;
+        }
         d.lx = x;
         d.ly = y;
-        d.lt = now;
       }
       return;
     }
@@ -2347,15 +2463,22 @@
   }
 
   function cubeUp(e) {
+    cube.touches.delete(e.pointerId);
+    if (cube.pinch) {
+      // Lifting a finger ends the pinch; nothing is tapped or spun.
+      if (cube.touches.size < 2) cube.pinch = null;
+      cube.drag = null;
+      return;
+    }
     const d = cube.drag;
     if (!d || d.id !== e.pointerId) return;
     cube.drag = null;
     board.classList.remove('spinning');
-    if (!d.moved && e.type === 'pointerup' && !game.done) {
+    if (!d.moved && !d.pan && e.type === 'pointerup' && !game.done) {
       const [x, y] = canvasPoint(e);
       const i = cubeHit(x, y);
       if (i >= 0) tap(i);
-    } else if (performance.now() - d.lt > 80) {
+    } else if (d.pan || performance.now() - d.lt > 80) {
       cube.spin.vx = cube.spin.vy = 0; // held still before letting go
     }
     cubeKick();
@@ -2370,13 +2493,14 @@
 
   function cubeWheel(e) {
     e.preventDefault();
-    cube.zoom = Math.min(2.4, Math.max(0.6, cube.zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015))));
-    cubeLayout();
+    const [x, y] = canvasPoint(e);
+    cubeZoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), x, y);
   }
 
   // For the browser play-test: where a trace's first visible cell is on
   // screen, if any of it faces you.
   window.__unfoldTest = {
+    cubeZoom: () => cube.zoom,
     cubePoint(i) {
       if (!isCube() || !cube.canvas) return null;
       const r = cube.canvas.getBoundingClientRect();
