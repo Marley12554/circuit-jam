@@ -1,7 +1,8 @@
 // Drives the game in headless Chromium and saves screenshots: home, level 1,
 // a short, a trace unzipping and running the rim into the core, the win
-// card, the level map, a big level with a hint, Build your own, and a
-// desktop view. Needs Playwright.
+// card, the level map, a big level with a hint, Build your own, a desktop
+// view, a cube on a phone and a desktop, and a 30 by 40 board. Needs
+// Playwright.
 // Usage: node tools/shoot.js <out-dir> [url]
 const fs = require('fs');
 const { chromium } = require('playwright');
@@ -98,6 +99,25 @@ fs.mkdirSync(out, { recursive: true });
   await p.waitForSelector('.arrow');
   await p.waitForTimeout(400);
   await p.screenshot({ path: out + '/9-desktop.png' });
+  await p.close();
+
+  // A cube on a phone and on a desktop, and the biggest flat board.
+  const cubeState = { sound: false, custom: { shape: 'cube', n: 6, w: 8, h: 10, density: 2, length: 1, bend: 1 } };
+  for (const [name, viewport] of [['10-cube-phone', phone], ['11-cube-desktop', { width: 1280, height: 800 }]]) {
+    p = await page(viewport, cubeState);
+    await p.click('#customBtn');
+    await p.click('#mixBtn');
+    await p.waitForSelector('.cube-canvas');
+    await p.waitForTimeout(600);
+    await p.screenshot({ path: out + '/' + name + '.png' });
+    await p.close();
+  }
+  p = await page(phone, { sound: false, custom: { shape: 'flat', n: 5, w: 30, h: 40, density: 2, length: 1, bend: 1 } });
+  await p.click('#customBtn');
+  await p.click('#mixBtn');
+  await p.waitForSelector('.arrow', { timeout: 20000 });
+  await p.waitForTimeout(300);
+  await p.screenshot({ path: out + '/12-board-30x40.png' });
   await p.close();
 
   await browser.close();

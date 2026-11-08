@@ -138,7 +138,8 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.click('#playBtn');
     await p.waitForSelector('.arrow');
     const total = await num(p, 'leftCount');
-    for (const i of (await freeNow(p)).slice(0, 2)) await tapArrow(p, i);
+    // Clear two traces, looking for a free one each time.
+    for (let k = 0; k < 2; k++) await tapArrow(p, (await freeNow(p))[0]);
     await tapArrow(p, await blockedNow(p));
     await p.click('#homeBtn');
     await p.reload();
@@ -187,6 +188,116 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.waitForSelector('.arrow');
     const after = await p.evaluate(() => JSON.parse(localStorage.getItem('unfold-v1')).run.puzzle.arrows);
     check(JSON.stringify(before) === JSON.stringify(after), 'the code makes the same board');
+    await p.context().close();
+  }
+
+  // The cube: build one, clear traces that face us, short one, spin it,
+  // and pick it up again after a reload.
+  {
+    const p = await open({ sound: false, custom: { shape: 'cube', n: 4, w: 8, h: 10, density: 2, length: 1, bend: 1 } });
+    await p.click('#customBtn');
+    check(!(await p.isHidden('.stepper[data-key="n"]')) && (await p.isHidden('.stepper[data-key="w"]')), 'cube shape shows face size, hides width');
+    await p.click('#mixBtn');
+    await p.waitForSelector('.cube-canvas');
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem('unfold-v1')).run);
+    const code = await p.textContent('#levelTitle');
+    check(/^C04[0-2]{3}-\d+$/.test(code), 'cube title shows a cube code: ' + code);
+    const total = await num(p, 'leftCount');
+    // A free trace with a cell facing us (turning the cube if needed).
+    async function facing(wantFree) {
+      return p.evaluate((wantFree) => {
+        const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+        const gone = run.puzzle.arrows.map((a, i) => run.gone.includes(i));
+        const free = new Set(window.UnfoldCore.freeArrows(run.puzzle, gone));
+        const pool = run.puzzle.arrows.map((a, i) => i).filter((i) => !gone[i] && free.has(i) === wantFree);
+        for (const i of pool) {
+          const pt = window.__unfoldTest.cubePoint(i);
+          if (pt) return { i, pt };
+        }
+        if (!pool.length) return null;
+        const a = run.puzzle.arrows[pool[0]];
+        window.__unfoldTest.showFace(a.cells[a.cells.length - 1][0]);
+        return { i: pool[0], pt: window.__unfoldTest.cubePoint(pool[0]) };
+      }, wantFree);
+    }
+    for (let k = 0; k < 2; k++) {
+      const f = await facing(true);
+      await p.mouse.click(f.pt[0], f.pt[1]);
+      await p.waitForTimeout(60);
+    }
+    check((await num(p, 'leftCount')) === total - 2, 'tapping free cube traces clears them');
+    const blocked = await facing(false);
+    if (blocked) {
+      await p.mouse.click(blocked.pt[0], blocked.pt[1]);
+      await p.waitForTimeout(60);
+      check((await num(p, 'bumpCount')) === 1, 'a blocked cube trace shorts');
+    }
+    // Dragging spins the cube without tapping anything.
+    const before = await num(p, 'leftCount');
+    const box = await p.locator('.cube-canvas').boundingBox();
+    await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 30, { steps: 6 });
+    await p.mouse.up();
+    check((await num(p, 'leftCount')) === before, 'a drag spins instead of tapping');
+    await p.click('#homeBtn');
+    await p.reload();
+    await p.click('#resumeBtn:not([hidden]), #playBtn');
+    await p.waitForSelector('.cube-canvas');
+    check((await num(p, 'leftCount')) === before, 'the cube resumes where it was');
+    check((await p.textContent('#setName')) === 'Your cube', 'resumed as a cube');
+    // The code rebuilds the same cube.
+    const arrows = await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('unfold-v1')).run.puzzle.arrows));
+    await p.click('#homeBtn');
+    await p.click('#customBtn');
+    await p.fill('#codeInput', code.toLowerCase());
+    await p.click('#codeForm button');
+    await p.waitForSelector('.cube-canvas');
+    await p.waitForFunction((c) => { const r = JSON.parse(localStorage.getItem('unfold-v1')).run; return r && r.custom && r.custom.seed === c; }, Number(code.split('-')[1]));
+    const again = await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('unfold-v1')).run.puzzle.arrows));
+    check(again === arrows, 'a cube code rebuilds the same cube');
+    await p.context().close();
+  }
+
+  // The biggest flat board: zoom in and tap while zoomed.
+  {
+    const p = await open({ sound: false, custom: { shape: 'flat', n: 5, w: 30, h: 40, density: 2, length: 1, bend: 1 } });
+    await p.click('#customBtn');
+    await p.click('#mixBtn');
+    await p.waitForSelector('.arrow', { timeout: 20000 });
+    check(!(await p.isHidden('.zoom-tools')), 'a 30 by 40 board offers zoom');
+    await p.click('[data-zoom="in"]');
+    await p.click('[data-zoom="in"]');
+    // Read the zoom the page set (computed styles lag a frame with
+    // reduced motion, which gives every property a tiny transition).
+    const zoomOf = () => p.evaluate(() => Number(/scale\(([\d.]+)\)/.exec(document.querySelector('.stage').style.transform)[1]));
+    const scale = await zoomOf();
+    check(scale > 1.5, 'zoom in scales the board: ' + scale.toFixed(2));
+    const total = await num(p, 'leftCount');
+    // A free trace that is on screen at this zoom.
+    const target = await p.evaluate(() => {
+      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+      const free = window.UnfoldCore.freeArrows(run.puzzle, null);
+      const svg = document.querySelector('.arrows').getBoundingClientRect();
+      const board = document.getElementById('board').getBoundingClientRect();
+      const k = svg.width / run.puzzle.w;
+      for (const i of free) {
+        for (const [x, y] of run.puzzle.arrows[i].cells) {
+          const px = svg.left + (x + 0.5) * k;
+          const py = svg.top + (y + 0.5) * k;
+          if (px > board.left + 10 && px < board.right - 60 && py > board.top + 10 && py < board.bottom - 10) return [px, py];
+        }
+      }
+      return null;
+    });
+    if (target) {
+      await p.mouse.click(target[0], target[1]);
+      await p.waitForTimeout(60);
+      check((await num(p, 'leftCount')) === total - 1, 'tapping while zoomed clears the trace');
+    } else check(false, 'found a free trace on screen while zoomed');
+    await p.click('[data-zoom="fit"]');
+    const fit = await zoomOf();
+    check(Math.abs(fit - 1) < 0.01, 'fit shows the whole board again');
     await p.context().close();
   }
 

@@ -20,10 +20,12 @@ To put it online with GitHub Pages: make the repository public, open **Settings 
 
 - **The rule.** A trace can leave only when every cell straight ahead of its arrow, out to the edge, is empty. Its body doesn't matter: it just follows the arrow. Removing a trace only ever opens space, so a trace that is free stays free and there are no dead ends. The challenge is spotting which traces are free.
 - **The core.** A trace that leaves charges up: it turns white-hot with a bolt of lightning crackling along it, and runs around the rim bus (the shorter way) trailing an afterglow, into the core at the top of the board. The core is a battery: it glows white while a trace pours in, then flashes the trace's color, throws off arcs of lightning, ripples, and lights its share of a ring of 12 charge cells. The last trace overloads it and the level is won. You can keep tapping while traces are still on their way.
-- **Campaign.** Seven sets of ten levels (Breadboard, Relay, Capacitor, Transistor, Processor, Mainframe, Quantum), then endless sets after that (Fusion, Plasma, Photon, Neutrino, Tachyon, Singularity, then round again). Each set has its own trace colors: a main color and one accent at first, with a third and fourth color in later sets. Every level is open from the start; the level map has a "Go to level" box and shows more endless sets on request. Play continues from the first level you haven't finished. Level 1 is built by hand to teach the rule; levels 2 to 5 use straight traces only, and bends arrive at level 6. Boards grow from 4 by 4 to 12 by 16, get fuller, and the traces get longer and twistier. Each set has a couple of easier "breather" levels.
+- **Campaign.** Seven sets of ten levels (Breadboard, Relay, Capacitor, Transistor, Processor, Mainframe, Quantum), then endless sets after that (Fusion, Plasma, Photon, Neutrino, Tachyon, Singularity, then round again). Each set has its own trace colors: a main color and one accent at first, with a third and fourth color in later sets. Every level is open from the start; the level map has a "Go to level" box and shows more endless sets on request. Play continues from the first level you haven't finished. Level 1 is built by hand to teach the rule; levels 2 to 5 use straight traces only, and bends arrive at level 6. Campaign boards grow from 4 by 4 to 12 by 16, get fuller, and the traces get longer and twistier. Each set has a couple of easier "breather" levels.
 - **Shorts and stars.** Tapping a blocked trace is a short: the trace lurches up to the one in its way, flickers red with a shower of sparks, the one it hit flashes white, and the drone says which color is blocking. The board doesn't change. 3 stars for no shorts, 2 stars for a few (2, plus 1 for every 15 traces), 1 star otherwise. Restart starts the count over. There are no lives and no forced restarts.
 - **Hints.** 3 per level. A hint makes the most useful free trace (the one holding up the most others) glow. Asking again before tapping it repeats the hint for free. Using a hint caps the level at 2 stars. Restart refills them.
-- **Build your own.** Tap a preset (Easy, Medium, Hard, Genius; each card shows a real board it makes) or set things yourself: width (4 to 12), height (4 to 16), fill (Roomy, Snug, Packed), traces (Short, Mixed, Long), and bends (Straight, Bendy, Twisty). A preset stays lit only while every setting matches it. Every board gets a code like `0810121-4821` (width, height, fill, traces, bends, then the seed) that friends can type in to play the same board.
+- **Build your own.** Pick a shape, Flat or Cube. A flat board can be 4 to 30 cells wide and 4 to 40 tall; tap a preset (Easy, Medium, Hard, Genius; each card shows a real board it makes) or set things yourself. A cube has faces of 3 to 10 cells. Both have fill (Roomy, Snug, Packed), traces (Short, Mixed, Long), and bends (Straight, Bendy, Twisty). A preset stays lit only while every setting matches it. Every board gets a code that friends can type in to play the same one: `0810121-4821` for a flat board (width, height, fill, traces, bends, then the seed) or `C06121-4821` for a cube (C, face size, the same three settings, then the seed). Big boards take up to a second or two to build, and the drone says so while it works.
+- **The cube.** Six faces, each its own board, drawn in 3D. Drag to spin it freely; a flick keeps it turning for a moment, and the mouse wheel zooms. Traces can wrap over an edge onto the next face, but a trace's arrow only looks ahead on its own face, out to that face's edge. Only the faces turned toward you are drawn, so you have to spin it to find what is free. A trace with a clear path unzips to the edge of its face and shoots straight out into space as a streak of energy, ending in a burst of sparks, and the charge meter above the cube fills. A hint turns the cube to face the trace it lights up. Arrow keys turn the cube too.
+- **Zoom.** Boards too big to tap comfortably get zoom buttons (in, out, and fit) in the corner. Pinch or use the mouse wheel to zoom, and drag to pan. On those boards a tap counts when your finger lifts, so a drag never clears a trace by accident.
 - **Pause and resume.** The current run is saved after every tap, so you can leave for the home screen, the level map, or another tab (or close the page) and pick it up again with Resume, or by opening that level again. Winning clears it; starting a different level or a new board replaces it.
 - **Keyboard.** Arrow keys move a box around the board, Enter or Space taps the trace inside it, and H asks for a hint.
 - **Sounds** are synthesized in the browser (no audio files): taps on buttons, a soft pop when the mouse moves onto one, a jingle when a level starts, an electric charge-up that lasts each trace's whole trip (a buzzing tone climbing in pitch with sparks crackling, starting higher as the core fills), a zap as it lands (a thump, a crack of static, and a rising ping), a crackle and buzz for a short, an overload surge when the core fills, and a win tune.
@@ -33,7 +35,7 @@ The screens and their structure come from [Color Lab](https://github.com/Marley1
 
 ## How levels are made
 
-`js/core.js` holds everything that is not drawing. In the code a trace is an "arrow":
+`js/core.js` holds everything that is not drawing. In the code a trace is an "arrow", and the rules and generator work on a board's geometry (how its cells are numbered and connected), so flat boards and cubes share one generator. On a cube, stepping off a face leads onto the next one, but a lane never leaves its face.
 
 1. **Tile.** Leave a share of cells empty (more on roomier boards, almost none on packed ones), then cover the rest with paths. Each path starts in the most hemmed-in empty cell and walks into the neighbor with the fewest empty neighbors of its own, turning at the level's bend rate, so nothing gets stranded. A lone leftover cell joins the end of a neighboring path, or stays empty.
 2. **Orient.** Every path can point either way. The cells never move, so each arrow's blockers depend only on its own direction and are worked out once for both. A board can be cleared exactly when no arrows block each other in a loop. First, arrows caught in loops are flipped until none are left; in the rare case that fails, a looped arrow is taken out (removing an arrow only ever frees others). Then a seeded hill climb flips arrows one at a time and keeps changes that don't make the board worse. It avoids the patterns that make a board read itself: convoys (an arrow blocked by one heading the same way along the same line) and arrows side by side heading the same way. On harder levels it also keeps few arrows free and makes the clear take many waves, with long lanes.
@@ -50,7 +52,7 @@ Everything is seeded and nothing depends on time, so every device makes the same
 | `index.html` | Page markup |
 | `css/style.css` | All styles |
 | `js/core.js` | Rules, generator, rating, campaign table, codes, stars. No DOM; runs in the page and in Node. |
-| `js/game.js` | Screens, the circuit board, unzip, short, and core animations, background wires, tools, progress |
+| `js/game.js` | Screens, the flat board (SVG) with zoom and pan, the cube (canvas, in 3D), the charge-up, short, and core animations, background wires, tools, progress |
 | `js/sound.js` | Web Audio sound effects |
 | `test/` | Unit tests for the rules and generator, and the version stamp check |
 | `tools/` | The campaign report, browser play-test, screenshots, version stamp, and the single-file build |
@@ -61,7 +63,7 @@ Everything is seeded and nothing depends on time, so every device makes the same
 npm test
 ```
 
-Runs the unit tests (Node 18 or newer, no dependencies), including a check that every level from 1 to 120 can be cleared.
+Runs the unit tests (Node 18 or newer, no dependencies), including checks that every level from 1 to 120, random custom boards, random cubes, and a 30 by 40 board can all be cleared, and that cube edges connect correctly.
 
 ```bash
 node tools/stamp.js
@@ -79,7 +81,7 @@ Prints every campaign level's size, arrow count, fill, free arrows at the start,
 node tools/playtest.js http://localhost:8765/index.html
 ```
 
-Plays whole levels through the real page in headless Chromium and checks shorts, stars, hints, restart, pause and resume, the level map, presets, puzzle codes, and keyboard play. This one and `tools/shoot.js` (screenshots) need Playwright.
+Plays whole levels through the real page in headless Chromium and checks the cube (tapping, shorts, spinning, resume, codes), zoom on a 30 by 40 board, shorts, stars, hints, restart, pause and resume, the level map, presets, puzzle codes, and keyboard play. This one and `tools/shoot.js` (screenshots) need Playwright.
 
 ```bash
 node tools/build-artifact.js dist/unfold.html --standalone

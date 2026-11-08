@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Exo+2:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=442c28abb8">
+<link rel="stylesheet" href="css/style.css?v=bd55c94eba">
 </head>
 <body>
 <!-- page:start -->
@@ -107,6 +107,16 @@
         <span class="panel-label">Settings</span>
         <span id="customBadge" class="custom-badge" hidden>Custom</span>
       </div>
+      <div class="setting-row" id="shapeRow">
+        <span class="step-label" id="shapeLabel">Shape</span>
+        <div class="trick two" role="radiogroup" aria-labelledby="shapeLabel" data-key="shape"></div>
+      </div>
+      <div class="stepper" data-key="n" hidden>
+        <span class="step-label">Face size</span>
+        <button class="step-btn" type="button" data-step="-1" aria-label="Smaller faces">−</button>
+        <output id="nOut" class="step-value">5</output>
+        <button class="step-btn" type="button" data-step="1" aria-label="Bigger faces">+</button>
+      </div>
       <div class="stepper" data-key="w">
         <span class="step-label">Width</span>
         <button class="step-btn" type="button" data-step="-1" aria-label="Narrower board">−</button>
@@ -135,7 +145,7 @@
       <form id="codeForm" class="code-form">
         <label for="codeInput">Have a board code?</label>
         <div class="code-row">
-          <input id="codeInput" inputmode="numeric" autocomplete="off" placeholder="0810121-4821" maxlength="14">
+          <input id="codeInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="0810121-4821 or C05121-77" maxlength="14">
           <button class="small-btn" type="submit">Go</button>
         </div>
         <p id="codeError" class="note bad" hidden></p>
@@ -198,9 +208,9 @@
 </div>
 <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
 
-<script src="js/core.js?v=442c28abb8"></script>
-<script src="js/sound.js?v=442c28abb8"></script>
-<script src="js/game.js?v=442c28abb8"></script>
+<script src="js/core.js?v=bd55c94eba"></script>
+<script src="js/sound.js?v=bd55c94eba"></script>
+<script src="js/game.js?v=bd55c94eba"></script>
 <!-- page:end -->
 </body>
 </html>
