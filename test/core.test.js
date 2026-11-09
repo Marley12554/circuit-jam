@@ -311,7 +311,7 @@ test('overclock power: refills follow the simulated player, with a battery', () 
   assert.ok(kind.cost > kind.refill && kind.cost <= 3);
   assert.strictEqual(Core.overclockSlack('level'), 1.5);
   const max = { shape: 'flat', w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, seed: 1 };
-  assert.strictEqual(Core.overclockSlack('custom', max), 1.0);
+  assert.strictEqual(Core.overclockSlack('custom', max), 0.93);
   assert.strictEqual(Core.overclockSlack('custom', Object.assign({}, max, { w: 12 })), 1.2);
 });
 

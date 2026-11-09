@@ -474,6 +474,18 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.waitForTimeout(200);
     check(await p.evaluate(() => document.getElementById('board').classList.contains('dying')), 'low power: the core starts dying');
     check(/^\d+\.\ds$/.test(await p.textContent('#powerSecs')), 'low power: the seconds left show: ' + (await p.textContent('#powerSecs')));
+    // Climbing out calms the effects even though the level is still low.
+    await p.evaluate((m) => __circuitJamTest.setPower(m * 0.08), start.max);
+    await p.waitForTimeout(500);
+    const before = await p.evaluate(() => __circuitJamTest.heat());
+    for (let k = 0; k < 2; k++) {
+      const f = await freeNow(p);
+      if (f.length) await tapArrow(p, f[0]);
+      await p.waitForTimeout(150);
+    }
+    await p.waitForTimeout(250);
+    const after = await p.evaluate(() => __circuitJamTest.heat());
+    check(after.true > 0.2 && after.felt < after.true * 0.7 && after.felt < before.felt, `climbing out calms the alarm: felt ${before.felt.toFixed(2)} -> ${after.felt.toFixed(2)} at true heat ${after.true.toFixed(2)}`);
     await p.evaluate(() => __circuitJamTest.setPower(0.05));
     await p.waitForSelector('#win:not([hidden])', { timeout: 4000 });
     check((await p.textContent('#winTitle')) === 'Core drained!', 'an empty core loses the board');

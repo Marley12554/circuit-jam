@@ -1280,8 +1280,9 @@
   /*
    * How much power an overclocked board gets. The refill per trace is the
    * time the simulated player needs per trace on this board, times
-   * `slack`: 1 is tuned to the player it was fitted to (tight; for
-   * Impossible), more is kinder. Cubes get 40% more on top: measured play
+   * `slack`: 1 matches the player it was fitted to, more is kinder, less
+   * is tighter (Impossible uses 0.93: in recorded play that player beat
+   * the simulation by about 10% on newer boards). Cubes get 40% more on top: measured play
    * covers only the start of one cube, and they are the harder shape. The
    * bar starts full (12 to 30 seconds, more for more traces) and can
    * overcharge to twice that: the battery, so clearing fast is never
@@ -1302,7 +1303,7 @@
   // little tighter, and a board maxed out on every setting is tuned tight.
   function overclockSlack(mode, custom) {
     if (mode === 'level') return 1.5;
-    return custom && customSpec(custom).hard === 1 ? 1.0 : 1.2;
+    return custom && customSpec(custom).hard === 1 ? 0.93 : 1.2;
   }
 
 

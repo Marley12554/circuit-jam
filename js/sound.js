@@ -372,6 +372,14 @@
       noise(gap, 0.04, { freq: 3000 + Math.random() * 3000, q: 2, gain: 0.1 + 0.1 * l });
       tone(400 + Math.random() * 300, 0, gap + 0.04, { type: 'sawtooth', to: 90, gain: 0.04 + 0.04 * l });
     },
+    // Overclock, a clear while the core is low: a quick rising "power
+    // restored" chirp, a step higher for each quick clear in a row.
+    restore(level, chain) {
+      const step = Math.pow(2, (Math.min(chain || 0, 12) * 2) / 12);
+      const f = 520 * step;
+      tone(f, 0, 0.09, { type: 'triangle', to: f * 1.5, gain: 0.05 + 0.05 * (level || 0) });
+      tone(f * 2, 0.04, 0.08, { gain: 0.03 });
+    },
     // The core running dry: everything winds down.
     powerDown() {
       tone(440, 0, 1.1, { type: 'sawtooth', to: 30, gain: 0.12 });

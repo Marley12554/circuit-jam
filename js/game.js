@@ -691,7 +691,7 @@
 
   function newOc() {
     const b = Core.overclockFor(game.puzzle, Core.overclockSlack(game.mode, game.custom));
-    return Object.assign(b, { S: b.max, grace: performance.now() + 1500, last: 0, beep: 0, cutUntil: 0, glitchUntil: 0, arcs: [] });
+    return Object.assign(b, { S: b.max, grace: performance.now() + 1500, last: 0, beep: 0, cutUntil: 0, glitchUntil: 0, arcs: [], rise: 0, calm: 0, lastS: b.max, feltAt: 0, feltHeat: 0, chain: 0, lastClear: 0 });
   }
 
   function ocStart() {
@@ -728,30 +728,45 @@
   }
 
   /*
-   * The last stretch of power: under 30% the core starts dying, and it gets
-   * worse the closer it gets to empty. A low electrical hum sags in pitch
-   * and grows louder, warning beeps come faster and lower, the power cuts
-   * out in sputters, the board browns out, the screen edges pulse red, and
-   * the seconds left show beside the bar.
-   */
-  /*
-   * Heat: how close the core is to dying, from 0 (55% power or more) to 1
-   * (empty). Nothing switches on at a threshold: every effect fades in
+   * Heat: how close the core is to dying, from 0 to 1 (empty), measured in
+   * seconds left: it starts at 10 seconds (or half the bar on small
+   * boards). Nothing switches on at a threshold: every effect fades in
    * with the heat, the gentle ones first. The bar warms from its color
-   * through amber to red and a low hum creeps in; then warning beeps start,
-   * slow and quiet, and the screen edges begin to glow; then the board
-   * browns out, the beeps speed up and get louder, and glitches, jitters,
-   * and power cuts come more and more often until it's a full alarm.
+   * through hot pink to red and a low hum creeps in; then warning beeps
+   * start, slow and quiet, and the screen edges begin to glow; then the
+   * board browns out, the beeps speed up and get louder, and glitches,
+   * jitters, and power cuts come more and more often until it's a full
+   * alarm.
+   *
+   * The effects also follow momentum: while the player is clearing fast
+   * enough that power is climbing, they calm down within about a second
+   * (the bar still shows the true level), and come back if they stop.
    */
-  const HEAT_FROM = 0.55;
-
   function heatOf(oc) {
-    return Math.max(0, Math.min(1, (HEAT_FROM - oc.S / oc.max) / HEAT_FROM));
+    const from = Math.min(10, oc.max / 2);
+    return Math.max(0, Math.min(1, (from - oc.S) / from));
+  }
+
+  // How hard the effects hit: the heat, eased off while power is rising.
+  function felt(oc, now) {
+    const dt = oc.feltAt ? Math.min(0.1, (now - oc.feltAt) / 1000) : 0;
+    oc.feltAt = now;
+    if (dt > 0) {
+      // Net power gained per second over about the last second and a half
+      // (refills arrive as jumps, the drain as a slope).
+      oc.rise += ((oc.S - oc.lastS) / dt - oc.rise) * Math.min(1, dt / 1.5);
+      const target = Math.max(0, Math.min(1, oc.rise / 0.6));
+      // Calming comes on fast; the alarm returns a little slower.
+      oc.calm += (target - oc.calm) * Math.min(1, dt / (target > oc.calm ? 0.35 : 0.8));
+    }
+    oc.lastS = oc.S;
+    return heatOf(oc) * (1 - 0.8 * oc.calm);
   }
 
   function ocDanger(now, running) {
     const oc = game.oc;
-    const h = running ? heatOf(oc) : 0;
+    const h = running ? felt(oc, now) : 0;
+    oc.feltHeat = h;
     Sound.dying(h);
     board.classList.toggle('dying', h > 0);
     $('dangerGlow').style.opacity = (0.4 * h * h).toFixed(3);
@@ -838,7 +853,9 @@
     bar.classList.toggle('full', over >= 0.999);
     // The bar warms with the heat; the seconds left fade in from 30%.
     const h = heatOf(oc);
-    bar.style.setProperty('--heat', h.toFixed(3));
+    // The color cools a little while the player climbs; the countdown and
+    // the flicker go by the true level.
+    bar.style.setProperty('--heat', Math.max(oc.feltHeat || 0, h * 0.6).toFixed(3));
     bar.classList.toggle('low', h > 0.75);
     const secs = $('powerSecs');
     const show = Math.max(0, Math.min(1, (h - 0.35) / 0.25));
@@ -856,6 +873,13 @@
 
   function ocRefill() {
     const oc = game.oc;
+    // In danger, each clear chirps, a step higher for each quick one in a
+    // row, so climbing out sounds like progress.
+    const now = performance.now();
+    oc.chain = now - oc.lastClear < 1500 ? oc.chain + 1 : 0;
+    oc.lastClear = now;
+    const h = heatOf(oc);
+    if (h > 0) Sound.restore(h, oc.chain);
     oc.S = Math.min(oc.cap, oc.S + oc.refill);
     flashPower('charge');
     drawPower();
@@ -3602,9 +3626,10 @@
     cubeZoom: () => cube.zoom,
     facesCleared: () => cube.cleared.size,
     rotation: () => Array.from(cube.R),
+    heat: () => (game.oc ? { true: heatOf(game.oc), felt: game.oc.feltHeat } : null),
     power: () => (game.oc ? { S: game.oc.S, max: game.oc.max, cap: game.oc.cap, refill: game.oc.refill, cost: game.oc.cost } : null),
     setPower(S) {
-      if (game.oc) game.oc.S = S;
+      if (game.oc) Object.assign(game.oc, { S, lastS: S, rise: -1, calm: 0 });
     },
     finaleTime: () => {
       const f = cube.finale || boardFx;
