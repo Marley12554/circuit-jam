@@ -1812,12 +1812,50 @@ input:focus-visible {
 /* The power bar across the bottom of the HUD. */
 .power {
   grid-column: 1 / -1;
-  position: relative;
-  height: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 4px 2px;
+}
+
+.power-track {
+  position: relative;
+  flex: 1;
+  height: 10px;
   background: #061418;
   box-shadow: inset 0 0 0 1px rgba(159, 244, 255, 0.4);
   overflow: hidden;
+}
+
+.power-secs {
+  font: 700 14px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  color: #ff5c78;
+  text-shadow: 0 0 8px #ff3b5c;
+}
+
+.power-secs:empty {
+  display: none;
+}
+
+.power.low .power-secs {
+  animation: oc-low 0.45s steps(1) infinite;
+}
+
+/* Red edges pulsing with each warning beep as the core dies. */
+.danger-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 90px 10px rgba(255, 40, 70, 0.75);
+}
+
+/* The board browning out: it dims, and blacks out when the power cuts. */
+.board.dying .stage,
+.board.dying .cube-canvas {
+  filter: brightness(var(--dim, 0.85)) saturate(calc(var(--dim, 0.85) * 1.1));
 }
 
 .power[hidden] {

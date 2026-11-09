@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Exo+2:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=609d9199f2">
+<link rel="stylesheet" href="css/style.css?v=79fb95a671">
 </head>
 <body>
 <!-- page:start -->
@@ -157,6 +157,7 @@
 
   <!-- Playing -->
   <section id="play" class="screen play" hidden>
+    <div id="dangerGlow" class="danger-glow" aria-hidden="true"></div>
     <header class="hud">
       <button id="homeBtn" class="icon-btn" type="button" aria-label="Menu"></button>
       <div class="hud-title">
@@ -168,7 +169,7 @@
         <div class="hud-moves"><span>Shorts</span><b id="bumpCount">0</b></div>
       </div>
       <button id="soundBtn" class="icon-btn" type="button" aria-label="Sound on" aria-pressed="true"></button>
-      <div id="power" class="power" role="meter" aria-label="Core power" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" hidden><i id="powerFill"></i></div>
+      <div id="power" class="power" role="meter" aria-label="Core power" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" hidden><span class="power-track"><i id="powerFill"></i></span><b id="powerSecs" class="power-secs" aria-hidden="true"></b></div>
     </header>
     <div class="robot-line">
       <svg class="robot" viewBox="0 0 64 64" aria-hidden="true">
@@ -211,9 +212,9 @@
 </div>
 <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
 
-<script src="js/core.js?v=609d9199f2"></script>
-<script src="js/sound.js?v=609d9199f2"></script>
-<script src="js/game.js?v=609d9199f2"></script>
+<script src="js/core.js?v=79fb95a671"></script>
+<script src="js/sound.js?v=79fb95a671"></script>
+<script src="js/game.js?v=79fb95a671"></script>
 <!-- page:end -->
 </body>
 </html>

@@ -456,6 +456,11 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.waitForSelector('.arrow');
     const resumed = (await p.evaluate(() => __circuitJamTest.power())).S;
     check(resumed > 7 && resumed <= 8.01, 'resume keeps the power: ' + resumed.toFixed(2));
+    await p.waitForTimeout(1800); // past the moment's grace after resuming
+    await p.evaluate((m) => __circuitJamTest.setPower(m * 0.2), start.max);
+    await p.waitForTimeout(200);
+    check(await p.evaluate(() => document.getElementById('board').classList.contains('dying')), 'low power: the core starts dying');
+    check(/^\d+\.\ds$/.test(await p.textContent('#powerSecs')), 'low power: the seconds left show: ' + (await p.textContent('#powerSecs')));
     await p.evaluate(() => __circuitJamTest.setPower(0.05));
     await p.waitForSelector('#win:not([hidden])', { timeout: 4000 });
     check((await p.textContent('#winTitle')) === 'Core drained!', 'an empty core loses the board');

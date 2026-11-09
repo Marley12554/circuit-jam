@@ -8,6 +8,7 @@
 
   let ctx = null;
   let master = null;
+  let hum = null; // the dying-core hum, built once and kept
   let enabled = true;
 
   function audio() {
@@ -283,10 +284,82 @@
       });
       tone(2093, T + 0.35, 1.6, { gain: 0.035, to: 2150 });
     },
-    // Overclock, power running low: a short warning beep.
-    lowPower() {
-      tone(880, 0, 0.07, { type: 'square', gain: 0.05 });
-      tone(660, 0.09, 0.07, { type: 'square', gain: 0.04 });
+    // Overclock, power running low: a warning beep that gets louder and
+    // sinks lower as the core dies, like an alarm losing its power.
+    lowPower(level) {
+      const l = Math.max(0, Math.min(1, level || 0));
+      const f = 980 - 420 * l;
+      tone(f, 0, 0.07, { type: 'square', gain: 0.05 + 0.05 * l });
+      tone(f * 0.75, 0.085, 0.08, { type: 'square', to: f * 0.7, gain: 0.04 + 0.05 * l });
+      tone(f / 4, 0, 0.12, { type: 'sawtooth', gain: 0.03 + 0.04 * l });
+    },
+    /*
+     * Overclock, the core dying: a steady electrical hum that runs while
+     * power is low. `level` goes from 0 (off) to 1 (nearly empty): the hum
+     * gets louder, sags in pitch, flutters faster, and turns rougher, like
+     * a transformer browning out. Called every frame; 0 fades it away.
+     */
+    dying(level) {
+      const l = Math.max(0, Math.min(1, level || 0));
+      if (!l) {
+        if (hum) hum.out.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.06);
+        return;
+      }
+      const ac = audio();
+      if (!ac) return;
+      if (!hum) {
+        const filter = ac.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.Q.value = 6;
+        const wob = ac.createGain();
+        wob.gain.value = 0.7;
+        const lfo = ac.createOscillator();
+        const depth = ac.createGain();
+        depth.gain.value = 0.3;
+        lfo.connect(depth);
+        depth.connect(wob.gain);
+        const cut = ac.createGain();
+        const out = ac.createGain();
+        out.gain.value = 0.0001;
+        filter.connect(wob);
+        wob.connect(cut);
+        cut.connect(out);
+        out.connect(master);
+        const oscs = [['sawtooth', 1], ['square', 2.013], ['sawtooth', 0.5]].map(([type, mult]) => {
+          const o = ac.createOscillator();
+          o.type = type;
+          o.connect(filter);
+          o.start();
+          return { o, mult };
+        });
+        lfo.start();
+        hum = { filter, lfo, cut, out, oscs };
+      }
+      const t = ac.currentTime;
+      const f = 70 - 30 * l;
+      hum.oscs.forEach(({ o, mult }) => o.frequency.setTargetAtTime(f * mult, t, 0.15));
+      hum.filter.frequency.setTargetAtTime(260 + 1300 * l, t, 0.15);
+      hum.lfo.frequency.setTargetAtTime(4 + 14 * l, t, 0.15);
+      hum.out.gain.setTargetAtTime(0.06 + 0.16 * l, t, 0.12);
+    },
+    // The dying core cutting out for a moment: the hum drops away with a
+    // crackle and a falling zzt, then catches again.
+    sputter(level) {
+      const ac = audio();
+      if (!ac) return;
+      const l = Math.max(0, Math.min(1, level || 0));
+      const t = ac.currentTime;
+      const gap = 0.05 + Math.random() * 0.1;
+      if (hum) {
+        hum.cut.gain.cancelScheduledValues(t);
+        hum.cut.gain.setValueAtTime(1, t);
+        hum.cut.gain.linearRampToValueAtTime(0.05, t + 0.015);
+        hum.cut.gain.setValueAtTime(0.05, t + gap);
+        hum.cut.gain.linearRampToValueAtTime(1, t + gap + 0.03);
+      }
+      noise(0, 0.05, { freq: 1800 + Math.random() * 3000, q: 1.5, gain: 0.12 + 0.12 * l });
+      noise(gap, 0.04, { freq: 3000 + Math.random() * 3000, q: 2, gain: 0.1 + 0.1 * l });
+      tone(400 + Math.random() * 300, 0, gap + 0.04, { type: 'sawtooth', to: 90, gain: 0.04 + 0.04 * l });
     },
     // The core running dry: everything winds down.
     powerDown() {

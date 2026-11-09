@@ -663,6 +663,7 @@
     game.done = false;
     game.lost = false;
     $('win').hidden = true;
+    ocCalm();
     game.oc = game.overclock ? newOc() : null;
     board.classList.toggle('overclock', !!game.oc);
     board.classList.remove('drained');
@@ -684,7 +685,7 @@
 
   function newOc() {
     const b = Core.overclockFor(game.puzzle);
-    return Object.assign(b, { S: b.max, grace: performance.now() + 1500, last: 0, beep: 0, arcs: [] });
+    return Object.assign(b, { S: b.max, grace: performance.now() + 1500, last: 0, beep: 0, cutUntil: 0, arcs: [] });
   }
 
   function ocStart() {
@@ -697,10 +698,12 @@
     if (!oc || game.done || !game.puzzle) {
       drawPower();
       ocClearFx();
+      ocCalm();
       return;
     }
     if (screen !== 'play') {
       oc.last = 0;
+      ocCalm();
       return;
     }
     const dt = oc.last ? Math.min(100, now - oc.last) / 1000 : 0;
@@ -713,12 +716,59 @@
       lose();
       return;
     }
-    if (running && oc.S / oc.max < 0.25 && now - oc.beep > 900) {
-      oc.beep = now;
-      Sound.lowPower();
-    }
+    ocDanger(now, running);
     ocCrackle(now);
     ocRaf = requestAnimationFrame(ocFrame);
+  }
+
+  /*
+   * The last stretch of power: under 30% the core starts dying, and it gets
+   * worse the closer it gets to empty. A low electrical hum sags in pitch
+   * and grows louder, warning beeps come faster and lower, the power cuts
+   * out in sputters, the board browns out, the screen edges pulse red, and
+   * the seconds left show beside the bar.
+   */
+  const DANGER = 0.3;
+
+  function ocDanger(now, running) {
+    const oc = game.oc;
+    const p = oc.S / oc.max;
+    const level = running && p < DANGER ? Math.min(1, 1 - p / DANGER) : 0;
+    Sound.dying(level);
+    board.classList.toggle('dying', level > 0);
+    if (!level) {
+      board.style.removeProperty('--dim');
+      return;
+    }
+    // Beeps: about one a second at first, four or five a second near empty.
+    if (now - oc.beep > 1100 - 850 * level) {
+      oc.beep = now;
+      Sound.lowPower(level);
+      dangerPulse(level);
+    }
+    // The power cutting out for a moment, more often near the end.
+    let dim = 1 - 0.25 * level;
+    if (now > oc.cutUntil && Math.random() < 0.006 + 0.08 * level * level) {
+      oc.cutUntil = now + 50 + Math.random() * 110;
+      Sound.sputter(level);
+    }
+    if (now < oc.cutUntil) dim = 0.35 + 0.2 * Math.random();
+    if (!reduceMotion) board.style.setProperty('--dim', dim.toFixed(2));
+  }
+
+  function dangerPulse(level) {
+    const glow = $('dangerGlow');
+    if (!glow.animate) return;
+    glow.animate([{ opacity: 0.35 + 0.6 * level }, { opacity: 0.12 * level }], { duration: 380, easing: 'ease-out', fill: 'forwards' });
+  }
+
+  // Everything back to normal: no hum, no brownout, no red edges.
+  function ocCalm() {
+    Sound.dying(0);
+    board.classList.remove('dying');
+    board.style.removeProperty('--dim');
+    const glow = $('dangerGlow');
+    if (glow.getAnimations) glow.getAnimations().forEach((a) => a.cancel());
   }
 
   function ocClearFx() {
@@ -735,7 +785,8 @@
     if (!oc) return;
     const p = Math.max(0, Math.min(1, oc.S / oc.max));
     $('powerFill').style.width = (p * 100).toFixed(1) + '%';
-    bar.classList.toggle('low', p < 0.25);
+    bar.classList.toggle('low', p < DANGER);
+    $('powerSecs').textContent = p < DANGER ? Math.max(0, oc.S).toFixed(1) + 's' : '';
     bar.setAttribute('aria-valuenow', String(Math.round(p * 100)));
   }
 
@@ -815,6 +866,7 @@
     setHover(-1);
     updateHud();
     drawPower();
+    ocCalm();
     board.classList.add('drained');
     Sound.powerDown();
     buzz([240]);
@@ -2060,7 +2112,11 @@
     // picks up where the clock was, not where it was at the last tap.
     const ocSave = () => game.oc && screen === 'play' && saveRun();
     window.addEventListener('pagehide', ocSave);
-    document.addEventListener('visibilitychange', () => document.hidden && ocSave());
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) return;
+      ocSave();
+      ocCalm(); // no hum from a tab in the background
+    });
     $('ocToggle').addEventListener('change', (e) => {
       saved.custom.overclock = e.target.checked;
       save();
