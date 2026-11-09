@@ -301,12 +301,28 @@ test('overclocked levels start at 14 and come a few per set', () => {
   }
 });
 
-test('overclock power: harder boards refill more per trace', () => {
-  const easy = Core.overclockFor({ arrows: new Array(10), rating: 2 });
-  const hard = Core.overclockFor({ arrows: new Array(40), rating: 12 });
-  assert.ok(hard.refill > easy.refill);
-  assert.ok(hard.max >= easy.max);
-  assert.ok(easy.cost >= 3 && hard.cost > hard.refill);
+test('overclock power: refills follow the simulated player, with a battery', () => {
+  const lv = Core.generateLevel(30);
+  const kind = Core.overclockFor(lv, 1.5);
+  const tight = Core.overclockFor(lv, 1.0);
+  assert.ok(Math.abs(tight.refill - lv.pace) < 1e-9, 'slack 1 refills exactly the simulated pace');
+  assert.ok(kind.refill > tight.refill);
+  assert.strictEqual(kind.cap, 2 * kind.max);
+  assert.ok(kind.cost > kind.refill);
+  assert.strictEqual(Core.overclockSlack('level'), 1.5);
+  const max = { shape: 'flat', w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, seed: 1 };
+  assert.strictEqual(Core.overclockSlack('custom', max), 1.0);
+  assert.strictEqual(Core.overclockSlack('custom', Object.assign({}, max, { w: 12 })), 1.2);
+});
+
+test('the simulated player: chains are quick, a scan across the board is slow', () => {
+  // Two free traces side by side, then one far away.
+  const near = { w: 12, h: 3, arrows: [{ cells: [[0, 1], [1, 1]] }, { cells: [[2, 1], [3, 1]] }] };
+  near.arrows[0].cells.reverse(); // points left, off the edge
+  const far = { w: 12, h: 3, arrows: [{ cells: [[1, 1], [0, 1]] }, { cells: [[10, 1], [11, 1]] }] };
+  const a = Core.humanPace(near);
+  const b = Core.humanPace(far);
+  assert.ok(b.perTrace > a.perTrace, a.perTrace + ' vs ' + b.perTrace);
 });
 
 test('only boards maxed out on every setting get the hardest generator', () => {

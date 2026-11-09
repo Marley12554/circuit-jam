@@ -368,6 +368,35 @@
       noise(0, 0.9, { type: 'lowpass', freq: 4000, to: 120, q: 1, gain: 0.12 });
       tone(90, 0.02, 0.5, { to: 35, gain: 0.3 });
     },
+    /*
+     * The core blowing out when an overclocked board runs dry: a loud
+     * crackling arc, a breaker clunking open, then a whine spinning down
+     * (pitched high enough for phone speakers) as the board goes dark,
+     * ending on a last pop. About 1.2 seconds.
+     */
+    blowout() {
+      // The arc: a dense crackle and a harsh buzz.
+      noise(0, 0.28, { freq: 3200, to: 1200, q: 0.6, gain: 0.4 });
+      for (let k = 0; k < 10; k++) noise(k * 0.022 + Math.random() * 0.01, 0.02, { freq: 2000 + Math.random() * 5000, q: 2, gain: 0.3 });
+      tone(180, 0, 0.26, { type: 'sawtooth', to: 140, gain: 0.14 });
+      tone(362, 0, 0.26, { type: 'square', to: 280, gain: 0.06 });
+      // The breaker: a heavy clunk.
+      tone(140, 0.26, 0.18, { to: 45, gain: 0.45 });
+      noise(0.26, 0.05, { type: 'lowpass', freq: 900, q: 1, gain: 0.35 });
+      tone(900, 0.26, 0.04, { type: 'square', gain: 0.05 });
+      // The spin-down: a whine sliding away into nothing.
+      tone(1300, 0.3, 0.85, { type: 'sawtooth', to: 120, gain: 0.07 });
+      tone(650, 0.3, 0.85, { type: 'triangle', to: 60, gain: 0.08 });
+      noise(0.3, 0.7, { freq: 2500, to: 200, q: 3, gain: 0.05 });
+      // The last pop.
+      noise(1.12, 0.03, { freq: 1800, q: 1.2, gain: 0.18 });
+    },
+    // The card after a lost board: a low two-note "failed".
+    failed() {
+      tone(330, 0, 0.22, { type: 'triangle', gain: 0.16 });
+      tone(247, 0.2, 0.45, { type: 'triangle', to: 233, gain: 0.16 });
+      tone(165, 0.2, 0.45, { type: 'sine', gain: 0.08 });
+    },
     // The core filling up on the last trace: the landing, then a surge
     // that climbs and bursts.
     overload() {

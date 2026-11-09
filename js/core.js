@@ -323,6 +323,79 @@
   }
 
   /*
+   * A simulated player, fitted to real play: after each clear they look
+   * for the free trace nearest the one they just cleared, and finding it
+   * takes about 0.5 s plus 0.14 s for every cell away it is (people
+   * follow chains: a trace right beside the last one is spotted at once,
+   * one across the board takes a scan). Shorts come at about 2.5% of taps.
+   * `pace` scales the times (1 is the player it was fitted to).
+   *
+   * Returns the seconds per trace that player needs on average, the share
+   * of clears whose next free trace was within 3 cells (how local the
+   * board plays), and the runs of such clears ("bursts"): their average
+   * length, the longest, and the share of clears in runs of 3 or more.
+   */
+  const HUMAN = { base: 0.51, perCell: 0.14, shortRate: 0.025, near: 3 };
+
+  function humanPace(puzzle, pace) {
+    const k = pace || 1;
+    const g = geometryOf(puzzle);
+    const n = puzzle.arrows.length;
+    const pos = puzzle.arrows.map((a) => {
+      const h = headOf(a);
+      return puzzle.kind === 'cube' ? cubeCenter(puzzle.n, h[0], h[1], h[2]) : [h[0], h[1], 0];
+    });
+    const blk = blockers(puzzle);
+    const waiting = blk.map((b) => b.length);
+    const blocks = Array.from({ length: n }, () => []);
+    blk.forEach((b, i) => b.forEach((j) => blocks[j].push(i)));
+    const free = new Set();
+    for (let i = 0; i < n; i++) if (!waiting[i]) free.add(i);
+    let at = puzzle.kind === 'cube' ? [puzzle.n / 2, puzzle.n / 2, 0] : [(puzzle.w - 1) / 2, (puzzle.h - 1) / 2, 0];
+    let time = 0;
+    let near = 0;
+    let run = 0;
+    const runs = [];
+    let cleared = 0;
+    while (free.size) {
+      let best = -1;
+      let bestD = Infinity;
+      for (const i of free) {
+        const p = pos[i];
+        const d = Math.hypot(p[0] - at[0], p[1] - at[1], p[2] - at[2]);
+        if (d < bestD || (d === bestD && i < best)) {
+          bestD = d;
+          best = i;
+        }
+      }
+      time += HUMAN.base + HUMAN.perCell * bestD;
+      if (cleared > 0) {
+        if (bestD <= HUMAN.near) {
+          near++;
+          run++;
+        } else {
+          runs.push(run);
+          run = 1;
+        }
+      } else run = 1;
+      free.delete(best);
+      at = pos[best];
+      cleared++;
+      for (const j of blocks[best]) if (--waiting[j] === 0) free.add(j);
+    }
+    runs.push(run);
+    time += cleared * HUMAN.shortRate * HUMAN.base;
+    const inBursts = runs.filter((r) => r >= 3).reduce((a, b) => a + b, 0);
+    return {
+      perTrace: (time * k) / Math.max(1, cleared),
+      local: near / Math.max(1, cleared - 1),
+      burstMean: cleared / runs.length,
+      burstMax: Math.max(...runs),
+      inBursts: inBursts / Math.max(1, cleared),
+    };
+  }
+
+  /*
    * Difficulty: picture a player who taps arrows at random. With r arrows
    * left and f of them free, they need r / f taps on average to find a free
    * one. The rating is that average over a whole clear, so 1 means every
@@ -852,6 +925,7 @@
         return -1;
       })
     );
+
     const hitBy = Array.from({ length: n }, () => []);
     for (let j = 0; j < n; j++) for (let w = 0; w < 2; w++) if (firstHit[j][w] >= 0) hitBy[firstHit[j][w]].push(j * 2 + w);
     const headOf = new Int32Array(g.count).fill(-1);
@@ -862,6 +936,7 @@
     const W_PAIR = 3;
     const W_FREE = 10 * hard;
     const W_LANE = (0.9 * hard) / Math.max(1, live);
+
 
     function convoyOf(j) {
       const u = firstHit[j][pick[j]];
@@ -923,6 +998,74 @@
       const before = localScore(i);
       flip(i);
       if (localScore(i) > before || inLoop(i)) flip(i);
+    }
+
+    /*
+     * Spread (optional): people clear boards in chains, spotting the next
+     * free trace right beside the last one. So keep flips that make a
+     * simulated player (see humanPace) take longer, which means the next
+     * free trace is more often somewhere else on the board.
+     */
+    const spread = spec.spread == null ? (spec.kind === 'cube' ? 0 : 4 * hard) : spec.spread;
+    if (spread > 0 && flippable.length) {
+      const posOf = (key) => {
+        const c = g.cellOf(key);
+        return spec.kind === 'cube' ? cubeCenter(spec.n, c[0], c[1], c[2]) : [c[0], c[1], 0];
+      };
+      const pos = ways.map((v) => v.map((w) => (w ? posOf(w.head) : null)));
+      const waiting = new Int32Array(n);
+      const blocks = Array.from({ length: n }, () => []);
+      const sim = () => {
+        for (let i = 0; i < n; i++) blocks[i].length = 0;
+        const free = [];
+        for (let i = 0; i < n; i++) {
+          if (!alive[i]) continue;
+          let c = 0;
+          for (const j of now(i).blk) if (alive[j]) {
+            blocks[j].push(i);
+            c++;
+          }
+          waiting[i] = c;
+          if (!c) free.push(i);
+        }
+        let at = null;
+        let total = 0;
+        while (free.length) {
+          let bi = 0;
+          let bd = 0;
+          if (at) {
+            bd = Infinity;
+            for (let k = 0; k < free.length; k++) {
+              const p = pos[free[k]][pick[free[k]]];
+              const d = Math.hypot(p[0] - at[0], p[1] - at[1], p[2] - at[2]);
+              if (d < bd) {
+                bd = d;
+                bi = k;
+              }
+            }
+          }
+          const i = free[bi];
+          free[bi] = free[free.length - 1];
+          free.pop();
+          total += bd;
+          at = pos[i][pick[i]];
+          for (const j of blocks[i]) if (--waiting[j] === 0) free.push(j);
+        }
+        return total;
+      };
+      let best = sim();
+      const tries = Math.round(n * spread);
+      for (let k = 0; k < tries; k++) {
+        const i = flippable[rng.int(flippable.length)];
+        flip(i);
+        if (inLoop(i)) {
+          flip(i);
+          continue;
+        }
+        const t = sim();
+        if (t >= best) best = t;
+        else flip(i);
+      }
     }
 
     let filled = 0;
@@ -989,10 +1132,12 @@
       if (board.arrows.length < 2 && spec.kind !== 'cube') board = build(spec, rng);
       if (board.arrows.length < 2) continue;
       const r = rate(board, seed);
-      found.push(Object.assign(board, r, { attempt }));
+      found.push(Object.assign(board, r, { attempt, pace: humanPace(board).perTrace }));
     }
     if (!found.length) throw new Error('could not build a board for ' + JSON.stringify(spec));
-    found.sort((a, b) => a.rating - b.rating || a.attempt - b.attempt);
+    // Sorted by how long a person takes per trace (the simulated player),
+    // which follows real play far better than the random tapper's rating.
+    found.sort((a, b) => a.pace - b.pace || a.rating - b.rating || a.attempt - b.attempt);
     const pick = spec.pick == null ? 0.5 : Math.min(1, Math.max(0, spec.pick));
     const chosen = found[Math.round(pick * (found.length - 1))];
     colorArrows(chosen, makeRng(hashString('color:' + seed)));
@@ -1000,6 +1145,7 @@
       arrows: chosen.arrows,
       fill: chosen.filled / g.count,
       rating: chosen.rating,
+      pace: chosen.pace,
       waves: chosen.waves,
       startFree: chosen.startFree,
       minFree: chosen.minFree,
@@ -1125,13 +1271,32 @@
    * how long finding a free trace should take on this board: longer on
    * boards with a higher rating (fewer free traces among more).
    */
-  function overclockFor(puzzle) {
+  /*
+   * How much power an overclocked board gets. The refill per trace is the
+   * time the simulated player needs per trace on this board, times
+   * `slack`: 1 is tuned to the player it was fitted to (tight; for
+   * Impossible), more is kinder. Cubes cost extra for spinning and hidden
+   * faces. The bar starts full (12 to 30 seconds, more for more traces)
+   * and can overcharge to twice that: the battery, so clearing fast is
+   * never wasted. A short costs one and a half refills.
+   */
+  const CUBE_SLOW = 2.2;
+
+  function overclockFor(puzzle, slack) {
     const n = puzzle.arrows.length;
-    const rating = Math.min(40, puzzle.rating || 3);
-    const refill = 0.8 + 0.16 * rating;
+    const pace = puzzle.pace || humanPace(puzzle).perTrace;
+    const refill = pace * (slack || 1.2) * (puzzle.kind === 'cube' ? CUBE_SLOW : 1);
     const max = Math.max(12, Math.min(30, 10 + n * 0.15));
-    return { max, refill, cost: Math.max(3, refill * 1.5) };
+    return { max, cap: 2 * max, refill, cost: refill * 1.5 };
   }
+
+  // How kind the clock is: the campaign is for everyone, a custom board a
+  // little tighter, and a board maxed out on every setting is tuned tight.
+  function overclockSlack(mode, custom) {
+    if (mode === 'level') return 1.5;
+    return custom && customSpec(custom).hard === 1 ? 1.0 : 1.2;
+  }
+
 
   function cloneArrows(arrows) {
     return arrows.map((a) => ({ cells: a.cells.map((c) => c.slice()), color: a.color }));
@@ -1275,6 +1440,9 @@
     bumpAllowance,
     starsFor,
     isOverclocked,
+    humanPace,
+    overclockSlack,
+    HUMAN,
     overclockFor,
     HINTS,
     PALETTE_SIZE,

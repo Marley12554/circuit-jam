@@ -687,7 +687,7 @@
   let ocRaf = 0;
 
   function newOc() {
-    const b = Core.overclockFor(game.puzzle);
+    const b = Core.overclockFor(game.puzzle, Core.overclockSlack(game.mode, game.custom));
     return Object.assign(b, { S: b.max, grace: performance.now() + 1500, last: 0, beep: 0, cutUntil: 0, arcs: [] });
   }
 
@@ -787,7 +787,13 @@
     bar.hidden = !oc;
     if (!oc) return;
     const p = Math.max(0, Math.min(1, oc.S / oc.max));
+    // Past full, the battery: a brighter layer over the same bar, up to a
+    // second bar's worth. Drain uses it up first.
+    const over = Math.max(0, Math.min(1, (oc.S - oc.max) / (oc.cap - oc.max)));
     $('powerFill').style.width = (p * 100).toFixed(1) + '%';
+    $('powerOver').style.width = (over * 100).toFixed(1) + '%';
+    bar.classList.toggle('overcharged', over > 0);
+    bar.classList.toggle('full', over >= 0.999);
     bar.classList.toggle('low', p < DANGER);
     $('powerSecs').textContent = p < DANGER ? Math.max(0, oc.S).toFixed(1) + 's' : '';
     bar.setAttribute('aria-valuenow', String(Math.round(p * 100)));
@@ -802,7 +808,7 @@
 
   function ocRefill() {
     const oc = game.oc;
-    oc.S = Math.min(oc.max, oc.S + oc.refill);
+    oc.S = Math.min(oc.cap, oc.S + oc.refill);
     flashPower('charge');
     drawPower();
   }
@@ -872,17 +878,32 @@
     drawPower();
     ocCalm();
     board.classList.add('drained');
-    Sound.powerDown();
-    buzz([240]);
+    // The blowout: a white flash, then the board browns out to black.
+    const lit = board.querySelector('.stage, .cube-canvas');
+    if (lit && lit.animate && !reduceMotion) {
+      lit.animate(
+        [
+          { filter: 'brightness(3) saturate(0.4)' },
+          { filter: 'brightness(1.4) saturate(0.6)', offset: 0.12 },
+          { filter: 'brightness(0.15)', offset: 0.3 },
+          { filter: 'brightness(0.7) grayscale(0.6)', offset: 0.36 },
+          { filter: 'grayscale(0.85) brightness(0.5)' },
+        ],
+        { duration: 1100, easing: 'ease-out' }
+      );
+    }
+    Sound.blowout();
+    buzz([60, 40, 60, 40, 300]);
     say('The core drained! Clear traces faster to keep it powered.', true);
     const epoch = game.epoch;
     setTimeout(() => {
       if (epoch !== game.epoch || screen !== 'play') return;
       showLose();
-    }, reduceMotion ? 100 : 900);
+    }, reduceMotion ? 100 : 1250);
   }
 
   function showLose() {
+    Sound.failed();
     const isLevel = game.mode === 'level';
     const n = game.puzzle.arrows.length;
     const cleared = game.gone.filter(Boolean).length;
@@ -3467,7 +3488,7 @@
   window.__circuitJamTest = {
     cubeZoom: () => cube.zoom,
     facesCleared: () => cube.cleared.size,
-    power: () => (game.oc ? { S: game.oc.S, max: game.oc.max, refill: game.oc.refill, cost: game.oc.cost } : null),
+    power: () => (game.oc ? { S: game.oc.S, max: game.oc.max, cap: game.oc.cap, refill: game.oc.refill, cost: game.oc.cost } : null),
     setPower(S) {
       if (game.oc) game.oc.S = S;
     },
