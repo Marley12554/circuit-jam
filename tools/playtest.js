@@ -555,6 +555,66 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await ctx.close();
   }
 
+  // A slip: a tap on a blocked trace right at the border of a free one
+  // clears the free one; a tap in the middle of the blocked one shorts.
+  {
+    const p = await open(progressTo(30));
+    await p.click('#playBtn');
+    await p.waitForSelector('.arrow');
+    const pair = await p.evaluate(() => {
+      const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
+      const lv = run.puzzle;
+      const gone = lv.arrows.map(() => false);
+      const free = new Set(window.CircuitJamCore.freeArrows(lv, gone));
+      const owner = {};
+      lv.arrows.forEach((a, i) => a.cells.forEach(([x, y]) => (owner[x + ',' + y] = i)));
+      for (const [key, i] of Object.entries(owner)) {
+        if (free.has(i)) continue;
+        const [x, y] = key.split(',').map(Number);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const j = owner[x + dx + ',' + (y + dy)];
+          if (j != null && free.has(j)) {
+            const svg = document.querySelector('.arrows').getBoundingClientRect();
+            const cell = svg.width / lv.w;
+            const px = (fx, fy) => [svg.left + fx * cell, svg.top + fy * cell];
+            return { slip: px(x + 0.5 + dx * 0.4, y + 0.5 + dy * 0.4), middle: px(x + 0.5, y + 0.5) };
+          }
+        }
+      }
+      return null;
+    });
+    if (pair) {
+      const left = await num(p, 'leftCount');
+      await p.mouse.click(pair.slip[0], pair.slip[1]);
+      await p.waitForTimeout(60);
+      check((await num(p, 'leftCount')) === left - 1 && (await num(p, 'bumpCount')) === 0, 'a slip at the border of a free trace clears it');
+      // (Clearing the free one may have freed its neighbor, so tap the
+      // middle of a trace that is still blocked.)
+      // (Away from the zoom buttons in the corner.)
+      const mid = await p.evaluate(() => {
+        const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
+        const lv = run.puzzle;
+        const gone = lv.arrows.map((a, i) => run.gone.includes(i));
+        const free = new Set(window.CircuitJamCore.freeArrows(lv, gone));
+        let best = null;
+        lv.arrows.forEach((a, i) => {
+          if (gone[i] || free.has(i)) return;
+          a.cells.forEach(([x, y]) => {
+            const d = Math.hypot(x + 0.5 - lv.w / 2, y + 0.5 - lv.h / 2);
+            if (!best || d < best.d) best = { d, x, y };
+          });
+        });
+        const svg = document.querySelector('.arrows').getBoundingClientRect();
+        const cell = svg.width / lv.w;
+        return [svg.left + (best.x + 0.5) * cell, svg.top + (best.y + 0.5) * cell];
+      });
+      await p.mouse.click(mid[0], mid[1]);
+      await p.waitForTimeout(60);
+      check((await num(p, 'bumpCount')) === 1, 'a tap in the middle of a blocked trace still shorts');
+    } else check(false, 'found a blocked trace beside a free one');
+    await p.context().close();
+  }
+
   // Keyboard: arrow keys move a box, Enter taps.
   {
     const p = await open({ sound: false });

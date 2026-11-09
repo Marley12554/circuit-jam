@@ -327,7 +327,9 @@
    * for the free trace nearest the one they just cleared, and finding it
    * takes about 0.5 s plus 0.14 s for every cell away it is (people
    * follow chains: a trace right beside the last one is spotted at once,
-   * one across the board takes a scan). Shorts come at about 2.5% of taps.
+   * one across the board takes a scan). On a cube, moving to another face
+   * costs about 2 s more for turning it and finding the trace there.
+   * Shorts come at about 2.5% of taps.
    * `pace` scales the times (1 is the player it was fitted to).
    *
    * Returns the seconds per trace that player needs on average, the share
@@ -335,7 +337,7 @@
    * board plays), and the runs of such clears ("bursts"): their average
    * length, the longest, and the share of clears in runs of 3 or more.
    */
-  const HUMAN = { base: 0.51, perCell: 0.14, shortRate: 0.025, near: 3 };
+  const HUMAN = { base: 0.51, perCell: 0.14, shortRate: 0.025, near: 3, spin: 2 };
 
   function humanPace(puzzle, pace) {
     const k = pace || 1;
@@ -351,7 +353,10 @@
     blk.forEach((b, i) => b.forEach((j) => blocks[j].push(i)));
     const free = new Set();
     for (let i = 0; i < n; i++) if (!waiting[i]) free.add(i);
-    let at = puzzle.kind === 'cube' ? [puzzle.n / 2, puzzle.n / 2, 0] : [(puzzle.w - 1) / 2, (puzzle.h - 1) / 2, 0];
+    const cube = puzzle.kind === 'cube';
+    const faceOf = (i) => (cube ? headOf(puzzle.arrows[i])[0] : 0);
+    let face = -1;
+    let at = cube ? [puzzle.n / 2, puzzle.n / 2, 0] : [(puzzle.w - 1) / 2, (puzzle.h - 1) / 2, 0];
     let time = 0;
     let near = 0;
     let run = 0;
@@ -368,7 +373,8 @@
           best = i;
         }
       }
-      time += HUMAN.base + HUMAN.perCell * bestD;
+      time += HUMAN.base + HUMAN.perCell * bestD + (face >= 0 && faceOf(best) !== face ? HUMAN.spin : 0);
+      face = faceOf(best);
       if (cleared > 0) {
         if (bestD <= HUMAN.near) {
           near++;
@@ -1275,19 +1281,21 @@
    * How much power an overclocked board gets. The refill per trace is the
    * time the simulated player needs per trace on this board, times
    * `slack`: 1 is tuned to the player it was fitted to (tight; for
-   * Impossible), more is kinder. Cubes cost extra for spinning and hidden
-   * faces. The bar starts full (12 to 30 seconds, more for more traces)
-   * and can overcharge to twice that: the battery, so clearing fast is
-   * never wasted. A short costs one and a half refills.
+   * Impossible), more is kinder. Cubes get 40% more on top: measured play
+   * covers only the start of one cube, and they are the harder shape. The
+   * bar starts full (12 to 30 seconds, more for more traces) and can
+   * overcharge to twice that: the battery, so clearing fast is never
+   * wasted. A short costs one and a half refills, but never more than 3
+   * seconds, so a slip on a slow board isn't ruinous.
    */
-  const CUBE_SLOW = 2.2;
+  const CUBE_SLACK = 1.4;
 
   function overclockFor(puzzle, slack) {
     const n = puzzle.arrows.length;
     const pace = puzzle.pace || humanPace(puzzle).perTrace;
-    const refill = pace * (slack || 1.2) * (puzzle.kind === 'cube' ? CUBE_SLOW : 1);
+    const refill = pace * (slack || 1.2) * (puzzle.kind === 'cube' ? CUBE_SLACK : 1);
     const max = Math.max(12, Math.min(30, 10 + n * 0.15));
-    return { max, cap: 2 * max, refill, cost: refill * 1.5 };
+    return { max, cap: 2 * max, refill, cost: Math.min(3, refill * 1.5) };
   }
 
   // How kind the clock is: the campaign is for everyone, a custom board a

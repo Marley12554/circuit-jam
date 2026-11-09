@@ -1687,6 +1687,14 @@
 
   // ---------- Tapping and pointing ----------
 
+  // How close (in cells) a tap must be to a free trace to count as meant
+  // for it when it lands on a blocked neighbor.
+  const SLIP = 0.3;
+
+  function isFree(i, occ) {
+    return Core.probe(game.puzzle, i, game.gone, occ).free;
+  }
+
   // The trace under a point on the board, in cells. A tap a little off a
   // trace (in an empty cell or just past the edge) still finds it.
   function arrowAt(x, y) {
@@ -1694,7 +1702,23 @@
     const occ = Core.occupancy(p, game.gone);
     const cx = Math.floor(x);
     const cy = Math.floor(y);
-    if (cx >= 0 && cy >= 0 && cx < p.w && cy < p.h && occ[cy * p.w + cx] !== -1) return occ[cy * p.w + cx];
+    if (cx >= 0 && cy >= 0 && cx < p.w && cy < p.h && occ[cy * p.w + cx] !== -1) {
+      const here = occ[cy * p.w + cx];
+      if (isFree(here, occ)) return here;
+      // A tap on a blocked trace right at the border of a free one goes to
+      // the free one: on small cells that is almost always a slip.
+      for (let ny = cy - 1; ny <= cy + 1; ny++) {
+        for (let nx = cx - 1; nx <= cx + 1; nx++) {
+          if (nx < 0 || ny < 0 || nx >= p.w || ny >= p.h) continue;
+          const j = occ[ny * p.w + nx];
+          if (j === -1 || j === here) continue;
+          const dx = Math.max(nx - x, 0, x - (nx + 1));
+          const dy = Math.max(ny - y, 0, y - (ny + 1));
+          if (Math.hypot(dx, dy) < SLIP && isFree(j, occ)) return j;
+        }
+      }
+      return here;
+    }
     let best = -1;
     let bestD = 0.45;
     for (let ny = cy - 1; ny <= cy + 1; ny++) {
@@ -3344,7 +3368,24 @@
           const q = [facePoint(f, u, v), facePoint(f, u + 1, v), facePoint(f, u + 1, v + 1), facePoint(f, u, v + 1)].map(project);
           if (!inQuad(q)) continue;
           const here = occ[g.key([f, u, v])];
-          if (here !== -1) return here;
+          if (here !== -1) {
+            if (isFree(here, occ)) return here;
+            // A slip onto a blocked trace at the border of a free one.
+            const size = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]);
+            for (let dv = -1; dv <= 1; dv++) {
+              for (let du = -1; du <= 1; du++) {
+                const uu = u + du;
+                const vv = v + dv;
+                if ((!du && !dv) || uu < 0 || vv < 0 || uu >= n || vv >= n) continue;
+                const j = occ[g.key([f, uu, vv])];
+                if (j === -1 || j === here || !isFree(j, occ)) continue;
+                const c = project(facePoint(f, uu + 0.5, vv + 0.5));
+                const reach = (du && dv ? Math.SQRT2 : 1) - (0.5 - SLIP);
+                if (Math.hypot(c[0] - x, c[1] - y) < reach * size) return j;
+              }
+            }
+            return here;
+          }
           // An empty cell: take the nearest trace next to it on this face.
           let best = -1;
           let bestD = Infinity;
