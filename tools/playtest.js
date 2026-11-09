@@ -463,6 +463,13 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     const resumed = (await p.evaluate(() => __circuitJamTest.power())).S;
     check(resumed > 7 && resumed <= 8.01, 'resume keeps the power: ' + resumed.toFixed(2));
     await p.waitForTimeout(1800); // past the moment's grace after resuming
+    await p.evaluate((m) => __circuitJamTest.setPower(m * 0.6), start.max);
+    await p.waitForTimeout(200);
+    check(!(await p.evaluate(() => document.getElementById('board').classList.contains('dying'))), 'at 60% power all is calm');
+    await p.evaluate((m) => __circuitJamTest.setPower(m * 0.45), start.max);
+    await p.waitForTimeout(200);
+    const warm = await p.evaluate(() => [document.getElementById('board').classList.contains('dying'), +getComputedStyle(document.getElementById('power')).getPropertyValue('--heat'), document.getElementById('powerSecs').textContent]);
+    check(warm[0] && warm[1] > 0 && warm[1] < 0.3 && warm[2] === '', 'at 45% it only starts to warm: heat ' + warm[1]);
     await p.evaluate((m) => __circuitJamTest.setPower(m * 0.2), start.max);
     await p.waitForTimeout(200);
     check(await p.evaluate(() => document.getElementById('board').classList.contains('dying')), 'low power: the core starts dying');
@@ -480,6 +487,10 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await clearAll(p);
     check((await p.textContent('#winTitle')) !== 'Core drained!' && (await p.textContent('#winStats')).includes('power left'), 'clearing in time wins, with power left');
     check(!(await p.isHidden('#replayBtn')) && !(await p.isHidden('#winStars')), 'the win card is whole again after a loss');
+    await p.click('#winClose');
+    check(!(await p.isHidden('#resultsBtn')) && (await p.isHidden('#hintBtn')), 'closing the card offers Results');
+    await p.click('#resultsBtn');
+    check(!(await p.isHidden('#win')) && (await p.isHidden('#resultsBtn')), 'Results opens the card again');
     await p.context().close();
   }
 

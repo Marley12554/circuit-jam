@@ -1855,11 +1855,17 @@ input:focus-visible {
 /* The board browning out: it dims, and blacks out when the power cuts. */
 .board.dying .stage,
 .board.dying .cube-canvas {
-  filter: brightness(var(--dim, 0.85)) saturate(calc(var(--dim, 0.85) * 1.1));
+  filter: brightness(var(--dim, 1)) saturate(calc(var(--dim, 1) * 1.1)) hue-rotate(var(--hue, 0deg));
 }
 
 .power[hidden] {
   display: none;
+}
+
+.power {
+  --heat: 0;
+  --warm: calc(min(1, var(--heat) * 2) * 100%);
+  --hot: calc(max(0, var(--heat) * 2 - 1) * 100%);
 }
 
 .power i {
@@ -1873,7 +1879,11 @@ input:focus-visible {
   inset: 0;
   background:
     repeating-linear-gradient(115deg, rgba(255, 255, 255, 0) 0 8px, rgba(255, 255, 255, 0.45) 8px 10px),
-    linear-gradient(90deg, var(--lab), var(--volt));
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, color-mix(in oklch, var(--lab), #ff4fa3 var(--warm)), #ff3b4e var(--hot)),
+      color-mix(in oklch, color-mix(in oklch, var(--volt), #ff9ccd var(--warm)), #ff7a5c var(--hot))
+    );
   clip-path: polygon(0 0, var(--edge) 0, calc(var(--edge) - 5px) 100%, 0 100%);
   transition: clip-path 0.12s linear;
 }
@@ -1913,9 +1923,6 @@ input:focus-visible {
 }
 
 .power.low i {
-  background:
-    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0) 0 8px, rgba(255, 255, 255, 0.4) 8px 10px),
-    linear-gradient(90deg, #ff3b5c, #ff8a5c);
   animation: oc-low 0.45s steps(1) infinite;
 }
 
@@ -1976,7 +1983,7 @@ input:focus-visible {
 /* The cube's own glow would otherwise win over the brownout and the
    drained look. */
 .board.overclock.cube-mode.dying .cube-canvas {
-  filter: brightness(var(--dim, 0.85)) saturate(calc(var(--dim, 0.85) * 1.1)) drop-shadow(0 0 10px rgba(255, 59, 92, 0.3));
+  filter: brightness(var(--dim, 1)) saturate(calc(var(--dim, 1) * 1.1)) hue-rotate(var(--hue, 0deg)) drop-shadow(0 0 10px rgba(255, 59, 92, 0.3));
 }
 
 .board.overclock.cube-mode.drained .cube-canvas {

@@ -289,15 +289,16 @@
     lowPower(level) {
       const l = Math.max(0, Math.min(1, level || 0));
       const f = 980 - 420 * l;
-      tone(f, 0, 0.07, { type: 'square', gain: 0.05 + 0.05 * l });
-      tone(f * 0.75, 0.085, 0.08, { type: 'square', to: f * 0.7, gain: 0.04 + 0.05 * l });
-      tone(f / 4, 0, 0.12, { type: 'sawtooth', gain: 0.03 + 0.04 * l });
+      tone(f, 0, 0.07, { type: 'square', gain: 0.02 + 0.08 * l });
+      tone(f * 0.75, 0.085, 0.08, { type: 'square', to: f * 0.7, gain: 0.015 + 0.075 * l });
+      tone(f / 4, 0, 0.12, { type: 'sawtooth', gain: 0.01 + 0.06 * l });
     },
     /*
-     * Overclock, the core dying: a steady electrical hum that runs while
-     * power is low. `level` goes from 0 (off) to 1 (nearly empty): the hum
-     * gets louder, sags in pitch, flutters faster, and turns rougher, like
-     * a transformer browning out. Called every frame; 0 fades it away.
+     * Overclock, the core dying: a tense electrical undertone that creeps
+     * in as power runs down. `level` goes from 0 (off) to 1 (nearly
+     * empty): it starts almost silent and low, then rises in pitch, grows
+     * louder, flutters faster, and turns rougher, with a thin whine
+     * climbing over it. Called every frame; 0 fades it away.
      */
     dying(level) {
       const l = Math.max(0, Math.min(1, level || 0));
@@ -333,14 +334,24 @@
           return { o, mult };
         });
         lfo.start();
-        hum = { filter, lfo, cut, out, oscs };
+        // The whine on top, through its own gain.
+        const whine = ac.createOscillator();
+        const whineGain = ac.createGain();
+        whineGain.gain.value = 0;
+        whine.type = 'sine';
+        whine.connect(whineGain);
+        whineGain.connect(cut);
+        whine.start();
+        hum = { filter, lfo, cut, out, oscs, whine, whineGain };
       }
       const t = ac.currentTime;
-      const f = 70 - 30 * l;
-      hum.oscs.forEach(({ o, mult }) => o.frequency.setTargetAtTime(f * mult, t, 0.15));
-      hum.filter.frequency.setTargetAtTime(260 + 1300 * l, t, 0.15);
-      hum.lfo.frequency.setTargetAtTime(4 + 14 * l, t, 0.15);
-      hum.out.gain.setTargetAtTime(0.06 + 0.16 * l, t, 0.12);
+      const f = 48 + 44 * l;
+      hum.oscs.forEach(({ o, mult }) => o.frequency.setTargetAtTime(f * mult, t, 0.3));
+      hum.filter.frequency.setTargetAtTime(180 + 1500 * l * l, t, 0.3);
+      hum.lfo.frequency.setTargetAtTime(2 + 16 * l * l, t, 0.3);
+      hum.out.gain.setTargetAtTime(0.22 * Math.pow(l, 1.6), t, 0.3);
+      hum.whine.frequency.setTargetAtTime(380 + 900 * l * l, t, 0.3);
+      hum.whineGain.gain.setTargetAtTime(0.12 * Math.pow(Math.max(0, l - 0.3) / 0.7, 2), t, 0.3);
     },
     // The dying core cutting out for a moment: the hum drops away with a
     // crackle and a falling zzt, then catches again.

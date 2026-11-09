@@ -48,6 +48,7 @@
     soundOff: '<svg viewBox="0 0 24 24"><path d="M11 5 6.5 9H3.5v6h3l4.5 4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></svg>',
     restart: '<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 3.5v5h5"/></svg>',
     hint: '<svg viewBox="0 0 24 24"><path d="M9 18h6M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-3.8 11.8c.5.4.8 1 .8 1.6V16h6v-.1c0-.6.3-1.2.8-1.6A6.5 6.5 0 0 0 12 2.5z"/></svg>',
+    results: '<svg viewBox="0 0 24 24"><path d="M7 3.5h10v6a5 5 0 0 1-10 0z"/><path d="M7 5.5H3.5v1.5a3.5 3.5 0 0 0 3.6 3.5M17 5.5h3.5v1.5a3.5 3.5 0 0 1-3.6 3.5"/><path d="M12 14.5v3.5M8 21h8M9.5 18h5v3h-5z"/></svg>',
   };
 
   const INTROS = {
@@ -664,7 +665,9 @@
     game.hinted = -1;
     game.done = false;
     game.lost = false;
+    game.carded = false;
     $('win').hidden = true;
+    syncResults();
     ocCalm();
     game.oc = game.overclock ? newOc() : null;
     board.classList.toggle('overclock', !!game.oc);
@@ -688,7 +691,7 @@
 
   function newOc() {
     const b = Core.overclockFor(game.puzzle, Core.overclockSlack(game.mode, game.custom));
-    return Object.assign(b, { S: b.max, grace: performance.now() + 1500, last: 0, beep: 0, cutUntil: 0, arcs: [] });
+    return Object.assign(b, { S: b.max, grace: performance.now() + 1500, last: 0, beep: 0, cutUntil: 0, glitchUntil: 0, arcs: [] });
   }
 
   function ocStart() {
@@ -731,38 +734,66 @@
    * out in sputters, the board browns out, the screen edges pulse red, and
    * the seconds left show beside the bar.
    */
-  const DANGER = 0.3;
+  /*
+   * Heat: how close the core is to dying, from 0 (55% power or more) to 1
+   * (empty). Nothing switches on at a threshold: every effect fades in
+   * with the heat, the gentle ones first. The bar warms from its color
+   * through amber to red and a low hum creeps in; then warning beeps start,
+   * slow and quiet, and the screen edges begin to glow; then the board
+   * browns out, the beeps speed up and get louder, and glitches, jitters,
+   * and power cuts come more and more often until it's a full alarm.
+   */
+  const HEAT_FROM = 0.55;
+
+  function heatOf(oc) {
+    return Math.max(0, Math.min(1, (HEAT_FROM - oc.S / oc.max) / HEAT_FROM));
+  }
 
   function ocDanger(now, running) {
     const oc = game.oc;
-    const p = oc.S / oc.max;
-    const level = running && p < DANGER ? Math.min(1, 1 - p / DANGER) : 0;
-    Sound.dying(level);
-    board.classList.toggle('dying', level > 0);
-    if (!level) {
+    const h = running ? heatOf(oc) : 0;
+    Sound.dying(h);
+    board.classList.toggle('dying', h > 0);
+    $('dangerGlow').style.opacity = (0.4 * h * h).toFixed(3);
+    if (!h) {
       board.style.removeProperty('--dim');
+      board.style.removeProperty('--hue');
+      board.style.translate = '';
       return;
     }
-    // Beeps: about one a second at first, four or five a second near empty.
-    if (now - oc.beep > 1100 - 850 * level) {
+    // Beeps from heat 0.4: one every second and a half, quiet, then
+    // faster and louder, four or five a second near empty.
+    const alarm = Math.max(0, (h - 0.4) / 0.6);
+    if (alarm > 0 && now - oc.beep > 1500 - 1250 * alarm) {
       oc.beep = now;
-      Sound.lowPower(level);
-      dangerPulse(level);
+      Sound.lowPower(alarm);
+      dangerPulse(alarm);
     }
-    // The power cutting out for a moment, more often near the end.
-    let dim = 1 - 0.25 * level;
-    if (now > oc.cutUntil && Math.random() < 0.006 + 0.08 * level * level) {
+    // A slow brownout, and power cuts that start rare and grow common.
+    let dim = 1 - 0.3 * h * h;
+    if (now > oc.cutUntil && Math.random() < 0.09 * Math.pow(h, 4)) {
       oc.cutUntil = now + 50 + Math.random() * 110;
-      Sound.sputter(level);
+      Sound.sputter(h);
     }
     if (now < oc.cutUntil) dim = 0.35 + 0.2 * Math.random();
-    if (!reduceMotion) board.style.setProperty('--dim', dim.toFixed(2));
+    if (reduceMotion) return;
+    board.style.setProperty('--dim', dim.toFixed(2));
+    // Glitches past the halfway mark: a jolt sideways and a color slip
+    // for a frame or two.
+    if (now > oc.glitchUntil && Math.random() < 0.05 * Math.pow(Math.max(0, h - 0.45) / 0.55, 2)) {
+      oc.glitchUntil = now + 40 + Math.random() * 90;
+      oc.jolt = (Math.random() < 0.5 ? -1 : 1) * (1 + 4 * h * h);
+      oc.slip = (Math.random() - 0.5) * 70 * h;
+    }
+    const glitching = now < oc.glitchUntil;
+    board.style.translate = glitching ? oc.jolt.toFixed(1) + 'px 0' : '';
+    board.style.setProperty('--hue', glitching ? oc.slip.toFixed(0) + 'deg' : '0deg');
   }
 
   function dangerPulse(level) {
-    const glow = $('dangerGlow');
-    if (!glow.animate) return;
-    glow.animate([{ opacity: 0.35 + 0.6 * level }, { opacity: 0.12 * level }], { duration: 380, easing: 'ease-out', fill: 'forwards' });
+    const pulse = $('dangerPulse');
+    if (!pulse.animate) return;
+    pulse.animate([{ opacity: 0.15 + 0.75 * level }, { opacity: 0 }], { duration: 420, easing: 'ease-out' });
   }
 
   // Everything back to normal: no hum, no brownout, no red edges.
@@ -770,8 +801,19 @@
     Sound.dying(0);
     board.classList.remove('dying');
     board.style.removeProperty('--dim');
-    const glow = $('dangerGlow');
-    if (glow.getAnimations) glow.getAnimations().forEach((a) => a.cancel());
+    board.style.removeProperty('--hue');
+    board.style.translate = '';
+    $('dangerGlow').style.opacity = '0';
+    const pulse = $('dangerPulse');
+    if (pulse.getAnimations) pulse.getAnimations().forEach((a) => a.cancel());
+  }
+
+  // Once a board is over and its card has been shown, closing the card
+  // swaps the Hint button for a Results button that opens it again.
+  function syncResults() {
+    const show = !!(game.done && game.carded && $('win').hidden);
+    $('resultsBtn').hidden = !show;
+    $('hintBtn').hidden = show;
   }
 
   function ocClearFx() {
@@ -794,8 +836,14 @@
     $('powerOver').style.setProperty('--fill', over.toFixed(4));
     bar.classList.toggle('overcharged', over > 0);
     bar.classList.toggle('full', over >= 0.999);
-    bar.classList.toggle('low', p < DANGER);
-    $('powerSecs').textContent = p < DANGER ? Math.max(0, oc.S).toFixed(1) + 's' : '';
+    // The bar warms with the heat; the seconds left fade in from 30%.
+    const h = heatOf(oc);
+    bar.style.setProperty('--heat', h.toFixed(3));
+    bar.classList.toggle('low', h > 0.75);
+    const secs = $('powerSecs');
+    const show = Math.max(0, Math.min(1, (h - 0.35) / 0.25));
+    secs.textContent = show > 0 ? Math.max(0, oc.S).toFixed(1) + 's' : '';
+    secs.style.opacity = show.toFixed(2);
     bar.setAttribute('aria-valuenow', String(Math.round(p * 100)));
   }
 
@@ -916,6 +964,8 @@
     $('replayBtn').hidden = true;
     $('nextBtn').querySelector('.big-label').textContent = 'Try again';
     $('win').hidden = false;
+    game.carded = true;
+    syncResults();
     $('nextBtn').focus({ preventScroll: true });
   }
 
@@ -2029,6 +2079,8 @@
     if (!isLevel) code.innerHTML = 'Board code <b>' + Core.codeOf(game.custom) + '</b> · share it so friends can play this one';
     $('nextBtn').querySelector('.big-label').textContent = isLevel ? 'Next level' : 'Build another';
     $('win').hidden = false;
+    game.carded = true;
+    syncResults();
     $('nextBtn').focus({ preventScroll: true });
   }
 
@@ -2120,6 +2172,13 @@
     $('homeBtn').innerHTML = ICONS.menu;
     document.querySelector('#restartBtn .tool-icon').innerHTML = ICONS.restart;
     document.querySelector('#hintBtn .tool-icon').innerHTML = ICONS.hint;
+    document.querySelector('#resultsBtn .tool-icon').innerHTML = ICONS.results;
+    $('resultsBtn').addEventListener('click', () => {
+      if (!game.carded) return;
+      $('win').hidden = false;
+      syncResults();
+      $('nextBtn').focus({ preventScroll: true });
+    });
 
     document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => show(b.dataset.go)));
     $('playBtn').addEventListener('click', () => startLevel(nextLevel()));
@@ -2190,7 +2249,10 @@
     });
     $('replayBtn').addEventListener('click', restart);
     $('winClose').innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
-    $('winClose').addEventListener('click', () => ($('win').hidden = true));
+    $('winClose').addEventListener('click', () => {
+      $('win').hidden = true;
+      syncResults();
+    });
     $('winHome').addEventListener('click', () => {
       game.epoch++;
       show('home');
@@ -2619,6 +2681,10 @@
     const n = p.n;
     ctx.setTransform(cube.dpr, 0, 0, cube.dpr, 0, 0);
     ctx.clearRect(0, 0, cube.W, cube.H);
+    // Seen at a steep angle a face's corners get very sharp, and a mitered
+    // join there sticks out like a spike: cut such corners off instead.
+    ctx.miterLimit = 1.6;
+    ctx.lineJoin = 'miter';
     drawFinaleBack(now);
     // Faces turned toward you, with their tiles.
     for (let f = 0; f < 6; f++) {
@@ -3142,8 +3208,14 @@
     const t = now - f.start;
     // Spin: speeds up until the burst, then eases to a slow turn.
     const target = t < FINALE.spinFrom ? 0 : t < FINALE.burst ? 0.0002 + 0.0105 * Math.pow((t - FINALE.spinFrom) / (FINALE.burst - FINALE.spinFrom), 2) : 0.0006;
-    f.spin += (target - f.spin) * Math.min(1, dt / (t < FINALE.burst ? 120 : 600));
-    cubeTurn(f.spin * dt, f.spin * dt * 0.42);
+    // While the player holds or flicks the cube, it is theirs: the turn
+    // drops away and eases back in once they let go and it settles.
+    const held = cube.drag || cube.pinch || Math.abs(cube.spin.vx) + Math.abs(cube.spin.vy) > 0.00003;
+    if (held && t >= FINALE.burst) f.spin = 0;
+    // (Settling after the burst takes 0.6 s; easing back in after the
+    // player lets go takes longer, so it doesn't lurch.)
+    else f.spin += (target - f.spin) * Math.min(1, dt / (t < FINALE.burst ? 120 : f.spin > target ? 600 : 1200));
+    if (!held || t < FINALE.burst) cubeTurn(f.spin * dt, f.spin * dt * 0.42);
     // Streaks striking the cube.
     f.streaks.forEach((sk) => {
       if (!sk.hit && now >= sk.at + sk.ms) {
@@ -3529,6 +3601,7 @@
   window.__circuitJamTest = {
     cubeZoom: () => cube.zoom,
     facesCleared: () => cube.cleared.size,
+    rotation: () => Array.from(cube.R),
     power: () => (game.oc ? { S: game.oc.S, max: game.oc.max, cap: game.oc.cap, refill: game.oc.refill, cost: game.oc.cost } : null),
     setPower(S) {
       if (game.oc) game.oc.S = S;

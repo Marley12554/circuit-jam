@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Exo+2:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=5426d773fc">
+<link rel="stylesheet" href="css/style.css?v=de94942335">
 </head>
 <body>
 <!-- page:start -->
@@ -160,6 +160,7 @@
   <!-- Playing -->
   <section id="play" class="screen play" hidden>
     <div id="dangerGlow" class="danger-glow" aria-hidden="true"></div>
+    <div id="dangerPulse" class="danger-glow" aria-hidden="true"></div>
     <header class="hud">
       <button id="homeBtn" class="icon-btn" type="button" aria-label="Menu"></button>
       <div class="hud-title">
@@ -190,6 +191,7 @@
     <nav class="toolbar" aria-label="Tools">
       <button id="restartBtn" class="tool" type="button" style="--tool:var(--amber)"><span class="tool-icon"></span><span class="tool-label">Restart</span></button>
       <button id="hintBtn" class="tool" type="button" style="--tool:var(--go)"><span class="tool-icon"></span><span class="tool-label">Hint</span><span class="badge" id="hintBadge"></span></button>
+      <button id="resultsBtn" class="tool" type="button" style="--tool:var(--go)" hidden><span class="tool-icon"></span><span class="tool-label">Results</span></button>
     </nav>
   </section>
 </main>
@@ -214,9 +216,9 @@
 </div>
 <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
 
-<script src="js/core.js?v=5426d773fc"></script>
-<script src="js/sound.js?v=5426d773fc"></script>
-<script src="js/game.js?v=5426d773fc"></script>
+<script src="js/core.js?v=de94942335"></script>
+<script src="js/sound.js?v=de94942335"></script>
+<script src="js/game.js?v=de94942335"></script>
 <!-- page:end -->
 </body>
 </html>
