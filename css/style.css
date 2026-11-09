@@ -1936,6 +1936,26 @@ input:focus-visible {
   animation: none;
 }
 
+/* The cube's own glow would otherwise win over the brownout and the
+   drained look. */
+.board.overclock.cube-mode.dying .cube-canvas {
+  filter: brightness(var(--dim, 0.85)) saturate(calc(var(--dim, 0.85) * 1.1)) drop-shadow(0 0 10px rgba(255, 59, 92, 0.3));
+}
+
+.board.overclock.cube-mode.drained .cube-canvas {
+  filter: grayscale(0.85) brightness(0.5);
+}
+
+.record-note {
+  margin: -4px 0 0;
+  max-width: 34ch;
+  justify-self: center;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-wrap: balance;
+}
+
 .oc-toggle {
   display: flex;
   align-items: center;

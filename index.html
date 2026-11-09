@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Exo+2:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=79fb95a671">
+<link rel="stylesheet" href="css/style.css?v=ff8691c2e9">
 </head>
 <body>
 <!-- page:start -->
@@ -74,7 +74,9 @@
       <div class="home-toggles">
         <label class="toggle"><input id="soundToggle" type="checkbox" checked> <span>Sound</span></label>
         <label class="toggle"><input id="vibrateToggle" type="checkbox" checked> <span>Vibration</span></label>
+        <label class="toggle" id="recordWrap" hidden><input id="recordToggle" type="checkbox" checked> <span>Share play data</span></label>
       </div>
+      <p id="recordNote" class="record-note" hidden>Playtest recording is on: your taps and their timing (nothing personal) are saved to help tune the difficulty.</p>
       <p class="rules"><b>How to play:</b> tap a trace. If nothing is in front of its arrow, it unzips off the board and into the core. If something is, it <b class="short">shorts</b> and stays put. Clear the board with no shorts for 3 stars.</p>
     </div>
   </section>
@@ -212,9 +214,9 @@
 </div>
 <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
 
-<script src="js/core.js?v=79fb95a671"></script>
-<script src="js/sound.js?v=79fb95a671"></script>
-<script src="js/game.js?v=79fb95a671"></script>
+<script src="js/core.js?v=ff8691c2e9"></script>
+<script src="js/sound.js?v=ff8691c2e9"></script>
+<script src="js/game.js?v=ff8691c2e9"></script>
 <!-- page:end -->
 </body>
 </html>

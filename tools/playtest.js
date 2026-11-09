@@ -509,6 +509,46 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.context().close();
   }
 
+  // Playtest recording, with a stand-in for the artifact's data store:
+  // a won board is saved with one event per tap, and the switch stops it.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+    const p = await ctx.newPage();
+    p.on('pageerror', (e) => errors.push(String(e)));
+    await p.addInitScript(() => {
+      localStorage.getItem('circuit-jam-v1') || localStorage.setItem('circuit-jam-v1', JSON.stringify({ sound: false, stars: { 1: 3 } }));
+      window.__writes = {};
+      const db = { doc: (path) => ({ set: async (body) => { window.__writes[path] = JSON.parse(JSON.stringify(body)); } }) };
+      window.claude = { use: async (name) => (name === 'db' ? db : name === 'user' ? { id: async () => 'u_test' } : null) };
+    });
+    await p.goto(url);
+    await p.waitForSelector('#recordWrap:not([hidden])');
+    check(!(await p.isHidden('#recordNote')), 'recording says it is on');
+    await p.click('#playBtn');
+    await p.waitForSelector('.arrow');
+    const blocked = await blockedNow(p);
+    if (blocked != null) await tapArrow(p, blocked);
+    await clearAll(p);
+    await p.waitForTimeout(200);
+    const writes = await p.evaluate(() => window.__writes);
+    check(!!writes['playtests/u_test'], 'the player is listed');
+    const runs = Object.keys(writes).filter((k) => k.startsWith('playtests/u_test/runs/'));
+    const run = runs.length && writes[runs[runs.length - 1]];
+    const taps = run ? run.events.map((e) => JSON.parse(e)).filter((e) => typeof e[1] === 'number') : [];
+    check(run && run.result === 'won' && run.level === 2, 'a won level is saved: ' + (run && run.result));
+    check(taps.length === run.traces + (blocked != null ? 1 : 0), 'one event per tap: ' + taps.length);
+    check(taps.every((e, k) => k === 0 || e[0] >= taps[k - 1][0]) && taps.some((e) => e[2] === 0) === (blocked != null), 'taps are timed and shorts marked');
+    await p.click('#winHome');
+    await p.click('label:has(#recordToggle)');
+    const before = Object.keys(await p.evaluate(() => window.__writes)).length;
+    await p.click('#playBtn');
+    await p.waitForSelector('.arrow');
+    await tapArrow(p, (await freeNow(p))[0]);
+    await p.click('#homeBtn');
+    check(Object.keys(await p.evaluate(() => window.__writes)).length === before, 'the switch stops recording');
+    await ctx.close();
+  }
+
   // Keyboard: arrow keys move a box, Enter taps.
   {
     const p = await open({ sound: false });

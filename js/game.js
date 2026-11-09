@@ -150,6 +150,8 @@
 
   function show(name) {
     if (screen === 'play' && name !== 'play' && game.oc && !game.done) saveRun();
+    if (screen === 'play' && name !== 'play') recMark('p', true);
+    else if (screen !== 'play' && name === 'play') recMark('u');
     screen = name;
     if (name === 'play' && game.oc) {
       game.oc.grace = performance.now() + 1000;
@@ -671,6 +673,7 @@
     drawPower();
     ocClearFx();
     ocStart();
+    recStart();
   }
 
   // ---------- Overclock ----------
@@ -860,6 +863,7 @@
   function lose() {
     if (game.done) return;
     game.done = true;
+    recEnd('lost');
     game.lost = true;
     clearRun();
     clearHint();
@@ -1553,6 +1557,7 @@
   function tap(i) {
     if (!game.puzzle || game.done || i < 0 || game.gone[i] || game.busy.has(i)) return;
     const result = Core.probe(game.puzzle, i, game.gone);
+    recTap(i, result.free);
     if (game.oc) {
       if (result.free) ocRefill();
       else ocShort();
@@ -1886,6 +1891,7 @@
 
   function hint() {
     if (!game.puzzle || game.done || left() === 0) return;
+    recMark('h');
     // Asking again before the hinted trace is gone repeats it for free.
     if (game.hinted >= 0 && !game.gone[game.hinted]) {
       say('Try the glowing ' + colorOf(game.hinted).name + ' trace!');
@@ -1923,6 +1929,7 @@
   function win() {
     if (game.done) return;
     game.done = true;
+    recEnd('won');
     clearRun();
     clearHint();
     setHover(-1);
@@ -2113,6 +2120,7 @@
     const ocSave = () => game.oc && screen === 'play' && saveRun();
     window.addEventListener('pagehide', ocSave);
     document.addEventListener('visibilitychange', () => {
+      if (screen === 'play') recMark(document.hidden ? 'p' : 'u', document.hidden);
       if (!document.hidden) return;
       ocSave();
       ocCalm(); // no hum from a tab in the background
@@ -2879,6 +2887,7 @@
   }
 
   function cubeTurn(dx, dy) {
+    if (rec) rec.turn += Math.abs(dx) + Math.abs(dy);
     cube.R = M3.mul(M3.rx(dy), M3.mul(M3.ry(dx), cube.R));
     if (cube.tip) cube.tip.style.opacity = '0';
     cubeKick();
@@ -3554,9 +3563,178 @@
     });
     buildBoard();
     updateHud();
+    if (rec) {
+      rec.resumed = true;
+      rec.startLeft = left();
+    }
     say(game.gone.some(Boolean) ? 'Welcome back! Pick up where you left off.' : 'Welcome back!');
     if (left() === 0) win();
     else saveRun();
+  }
+
+  // ---------- Playtest recording ----------
+
+  /*
+   * In the claude.ai artifact (and nowhere else), each attempt at a board
+   * is saved for tuning the difficulty: the board's settings and, for every
+   * tap, when it came, whether it cleared or shorted, how many traces were
+   * free and left, the power, the zoom, and on a cube which faces were in
+   * view and how far it was turned since the last tap. Pauses are marked
+   * so time away isn't counted as thinking. Nothing personal is kept. Each
+   * player writes only under their own id; only the owner reads them all.
+   * A "Share play data" switch on the home screen turns it off.
+   */
+  const recorder = { db: null, uid: null, on: false };
+  let rec = null; // the attempt being recorded
+
+  async function recInit() {
+    if (!window.claude || typeof window.claude.use !== 'function') return;
+    try {
+      const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+      const uid = db && user ? await user.id() : null;
+      if (!uid) return;
+      Object.assign(recorder, { db, uid });
+      $('recordWrap').hidden = false;
+      $('recordToggle').checked = saved.record !== false;
+      setRecording(saved.record !== false);
+    } catch (e) {
+      /* no recording in this view */
+    }
+  }
+
+  function setRecording(on) {
+    recorder.on = !!(on && recorder.db);
+    $('recordNote').hidden = !recorder.on;
+    if (recorder.on && !recorder.greeted) {
+      recorder.greeted = true;
+      recWrite('playtests/' + recorder.uid, {
+        lastSeen: new Date().toISOString(),
+        device: recDevice(),
+      });
+    }
+  }
+
+  function recDevice() {
+    return {
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      dpr: window.devicePixelRatio || 1,
+      coarse: !!(window.matchMedia && matchMedia('(pointer: coarse)').matches),
+      reducedMotion: reduceMotion,
+    };
+  }
+
+  function recWrite(path, body) {
+    return recorder.db
+      .doc(path)
+      .set(body)
+      .catch((e) => {
+        // A write this viewer may not make, or a full store: stop quietly.
+        if (e && e.code !== 'unavailable' && e.code !== 'resource_exhausted') recorder.on = false;
+      });
+  }
+
+  function recStart() {
+    if (rec && !rec.result) recEnd('restarted');
+    rec = null;
+    if (!recorder.on || !game.puzzle) return;
+    const p = game.puzzle;
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    rec = {
+      path: 'playtests/' + recorder.uid + '/runs/' + id,
+      t0: performance.now(),
+      turn: 0,
+      events: [],
+      body: {
+        v: 1,
+        startedAt: new Date().toISOString(),
+        mode: game.mode,
+        level: game.mode === 'level' ? game.level : null,
+        code: game.mode === 'custom' && game.custom ? Core.codeOf(game.custom) : null,
+        shape: isCube() ? 'cube' : 'flat',
+        w: p.w || null,
+        h: p.h || null,
+        n: p.n || null,
+        traces: p.arrows.length,
+        rating: p.rating || null,
+        overclock: game.oc ? { max: game.oc.max, refill: game.oc.refill, cost: game.oc.cost } : null,
+        device: recDevice(),
+        sound: !!saved.sound,
+      },
+    };
+  }
+
+  function recNow() {
+    return Math.round(performance.now() - rec.t0);
+  }
+
+  // A tap: [ms, trace, cleared, free, left, free in view, faces in view,
+  // turn since last tap, zoom, power].
+  function recTap(i, ok) {
+    if (!rec) return;
+    const p = game.puzzle;
+    const free = Core.freeArrows(p, game.gone);
+    let inView = null;
+    let faces = null;
+    if (isCube()) {
+      const vis = [0, 1, 2, 3, 4, 5].filter(shown);
+      faces = vis.length;
+      inView = free.filter((k) => vis.includes(Core.headOf(p.arrows[k])[0])).length;
+    }
+    rec.events.push([
+      recNow(),
+      i,
+      ok ? 1 : 0,
+      free.length,
+      left(),
+      inView,
+      faces,
+      +rec.turn.toFixed(2),
+      +(isCube() ? cube.zoom : view.z).toFixed(2),
+      game.oc ? +game.oc.S.toFixed(2) : null,
+    ]);
+    rec.turn = 0;
+    if (rec.events.length % 25 === 0) recSave();
+  }
+
+  // Other moments: 'h' hint, 'p' paused (left the board or the tab), 'u'
+  // back. Pauses save, so a closed tab keeps what was played.
+  function recMark(kind, saveNow) {
+    if (!rec || rec.result) return;
+    rec.events.push([recNow(), kind]);
+    if (saveNow) recSave();
+  }
+
+  function recEnd(result) {
+    if (!rec || rec.result) return;
+    rec.result = result;
+    rec.events.push([recNow(), result]);
+    recSave();
+  }
+
+  // One write at a time per attempt; a write asked for meanwhile follows.
+  function recSave(r = rec) {
+    if (!r || !recorder.on || !r.events.some((e) => typeof e[1] === 'number')) return;
+    if (r.busy) {
+      r.dirty = true;
+      return;
+    }
+    r.busy = true;
+    const body = Object.assign({}, r.body, {
+      endedAt: new Date().toISOString(),
+      result: r.result || 'open',
+      resumed: !!r.resumed,
+      startLeft: r.startLeft == null ? r.body.traces : r.startLeft,
+      // One string per event: the store takes no arrays inside arrays.
+      events: r.events.map((e) => JSON.stringify(e)),
+    });
+    recWrite(r.path, body).then(() => {
+      r.busy = false;
+      if (r.dirty) {
+        r.dirty = false;
+        recSave(r);
+      }
+    });
   }
 
   function start() {
@@ -3564,6 +3742,13 @@
     wire();
     setSound(saved.sound);
     show('home');
+    $('recordToggle').addEventListener('change', (e) => {
+      saved.record = e.target.checked;
+      save();
+      setRecording(e.target.checked);
+      if (!e.target.checked) rec = null;
+    });
+    recInit();
   }
 
   start();
