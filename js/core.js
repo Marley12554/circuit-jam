@@ -1165,13 +1165,18 @@
   function customSpec(c) {
     const len = CUSTOM.length[c.length];
     const shape = c.shape === 'cube' ? { kind: 'cube', n: c.n } : { w: c.w, h: c.h };
+    // At the very top of every setting the generator goes all out too:
+    // it keeps the hardest of its candidates and pushes hardest on few free
+    // traces and long lanes.
+    const biggest = c.shape === 'cube' ? c.n === CUSTOM.maxFace : c.w === CUSTOM.maxW && c.h === CUSTOM.maxH;
+    const max = biggest && c.density === 2 && c.length === 2 && c.bend === 2;
     return Object.assign(shape, {
       density: CUSTOM.density[c.density],
       minLen: len[0],
       maxLen: len[1],
       bend: CUSTOM.bend[c.bend],
-      pick: 0.6,
-      hard: 0.75,
+      pick: max ? 1 : 0.6,
+      hard: max ? 1 : 0.75,
       cover: 1.4,
       overclock: !!c.overclock,
       // The same board with or without Overclock.

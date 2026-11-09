@@ -91,6 +91,9 @@
     { id: 'medium', name: 'Medium', w: 8, h: 10, n: 5, density: 1, length: 1, bend: 1 },
     { id: 'hard', name: 'Hard', w: 10, h: 12, n: 8, density: 2, length: 1, bend: 1 },
     { id: 'genius', name: 'Genius', w: 12, h: 16, n: 12, density: 2, length: 2, bend: 2 },
+    // Everything at its hardest: the biggest board, every setting maxed, and
+    // Overclock on. The only preset that touches the Overclock switch.
+    { id: 'impossible', name: 'Impossible', w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, overclock: true },
   ];
 
   // ---------- Saved progress (this browser only) ----------
@@ -308,12 +311,13 @@
   // shape; it matches when the current shape's size and every choice agree.
   function presetMatches(p, c) {
     const size = c.shape === 'cube' ? ['n'] : ['w', 'h'];
-    return size.concat(CHOICE_KEYS).every((k) => p[k] === c[k]);
+    return size.concat(CHOICE_KEYS).every((k) => p[k] === c[k]) && (!p.overclock || !!c.overclock);
   }
 
   function applyPreset(p) {
     const before = customSnapshot();
     ['w', 'h', 'n'].concat(CHOICE_KEYS).forEach((k) => (saved.custom[k] = p[k]));
+    if (p.overclock) saved.custom.overclock = true;
     save();
     renderCustom();
     flashChanges(before, customSnapshot());
@@ -322,14 +326,14 @@
   // What each setting shows, to light up the ones a preset changed.
   function customSnapshot() {
     const c = saved.custom;
-    return { wOut: c.w, hOut: c.h, nOut: c.n, densityRow: c.density, lengthRow: c.length, bendRow: c.bend };
+    return { wOut: c.w, hOut: c.h, nOut: c.n, densityRow: c.density, lengthRow: c.length, bendRow: c.bend, ocToggle: !!c.overclock };
   }
 
   function flashChanges(before, after) {
     if (reduceMotion) return;
     Object.keys(after).forEach((id) => {
       if (before[id] === after[id]) return;
-      const el = $(id).closest('.stepper, .setting-row') || $(id);
+      const el = $(id).closest('.stepper, .setting-row, .oc-toggle') || $(id);
       el.classList.remove('flash');
       void el.offsetWidth;
       el.classList.add('flash');
@@ -386,8 +390,16 @@
   function buildPresets() {
     const cube = saved.custom.shape === 'cube';
     $('presets').innerHTML = PRESETS.map((p) => {
-      const art = cube ? presetCube(p) : flatPreviews[p.id] || (flatPreviews[p.id] = presetBoard(p));
       const size = cube ? p.n + '×' + p.n + '×' + p.n : p.w + '×' + p.h;
+      if (p.id === 'impossible') {
+        return (
+          '<button class="preset impossible" type="button" data-preset="' + p.id + '" aria-pressed="false">' +
+          '<svg class="impossible-art" viewBox="0 0 40 40" aria-hidden="true"><path class="ring" d="M20 2 36 11v18L20 38 4 29V11z"/><path class="bolt" d="M23 6 11 22h8l-3 12 13-17h-8z"/></svg>' +
+          '<span class="impossible-text"><span class="preset-name">' + p.name + '</span>' +
+          '<span class="preset-icons">' + size + ' · Packed · Long · Twisty · Overclocked</span></span></button>'
+        );
+      }
+      const art = cube ? presetCube(p) : flatPreviews[p.id] || (flatPreviews[p.id] = presetBoard(p));
       return (
         '<button class="preset" type="button" data-preset="' + p.id + '" aria-pressed="false">' + art +
         '<span class="preset-name">' + p.name + '</span><span class="preset-icons" aria-hidden="true">' + size + '</span></button>'
@@ -2052,6 +2064,7 @@
     $('ocToggle').addEventListener('change', (e) => {
       saved.custom.overclock = e.target.checked;
       save();
+      renderCustom();
     });
     $('vibrateToggle').addEventListener('change', (e) => setVibrate(e.target.checked));
     $('vibrateToggle').closest('label').hidden = !canVibrate;

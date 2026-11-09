@@ -138,7 +138,7 @@
       env.gain.exponentialRampToValueAtTime(0.13, t0 + 0.04);
       env.gain.setValueAtTime(0.13, t1 - 0.06);
       env.gain.exponentialRampToValueAtTime(0.2, t1 - 0.01);
-      env.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.05);
+      env.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.12);
       filter.connect(hum);
       hum.connect(env);
       env.connect(master);
@@ -149,10 +149,10 @@
         o.frequency.exponentialRampToValueAtTime(high * mult, t1);
         o.connect(filter);
         o.start(t0);
-        o.stop(t1 + 0.08);
+        o.stop(t1 + 0.14);
       });
       lfo.start(t0);
-      lfo.stop(t1 + 0.08);
+      lfo.stop(t1 + 0.14);
       // The whine of a charging capacitor.
       tone(700 * Math.pow(2, p * 0.5), 0, dur, { to: 3600 * Math.pow(2, p * 0.5), gain: 0.035 });
       // Sparks, sparse at first and thick at the end.
@@ -162,16 +162,32 @@
         noise(at, 0.012 + Math.random() * 0.012, { freq: 2500 + Math.random() * 5000, q: 3, gain: 0.08 + 0.18 * (at / dur) });
       }
     },
-    // A charge landing in the core: a heavy thump, a crack of static, and
-    // a bright ping that rises as the core fills.
+    /*
+     * A trace landing in the core: a crack and a thump as it hits, a quick
+     * upward sweep as the charge pours in, then a bell-like chime that
+     * rings out with the core's ripple while it hums and throws off a few
+     * sparks. Each landing chimes a step higher up a pentatonic scale, so
+     * the charge-up keeps climbing as the core fills. Mostly in the middle
+     * of the range, so phone speakers carry it.
+     */
     zap(progress) {
       const p = Math.max(0, Math.min(1, progress || 0));
-      tone(170, 0, 0.22, { to: 42, gain: 0.42 });
-      tone(2600, 0, 0.11, { type: 'sawtooth', to: 260, gain: 0.06 });
-      noise(0, 0.09, { freq: 5200, q: 0.8, gain: 0.3 });
-      noise(0.02, 0.18, { type: 'highpass', freq: 3000, to: 9000, q: 0.5, gain: 0.05 });
-      const ping = 880 * Math.pow(2, p);
-      tone(ping, 0.03, 0.32, { type: 'triangle', to: ping * 1.06, gain: 0.07 });
+      const k = Math.round(p * 14);
+      const note = 392 * Math.pow(2, (12 * Math.floor(k / 5) + [0, 2, 4, 7, 9][k % 5]) / 12);
+      // The hit.
+      tone(170, 0, 0.22, { to: 42, gain: 0.38 });
+      tone(240, 0, 0.16, { type: 'square', to: 90, gain: 0.06 });
+      noise(0, 0.1, { freq: 3800, q: 0.7, gain: 0.3 });
+      // The charge pouring in.
+      tone(note / 2, 0, 0.13, { type: 'sawtooth', to: note * 1.5, gain: 0.07 });
+      noise(0, 0.14, { freq: 900, to: 6000, q: 1.5, gain: 0.08 });
+      // The chime, with a fifth and an octave over it.
+      tone(note, 0.06, 0.75, { type: 'triangle', gain: 0.13 });
+      tone(note * 1.5, 0.09, 0.6, { type: 'triangle', gain: 0.06 });
+      tone(note * 2, 0.1, 0.5, { gain: 0.05 });
+      // The core humming as it takes the charge, and a few stray sparks.
+      tone(note / 4, 0.05, 0.5, { type: 'sawtooth', to: (note / 4) * 1.03, gain: 0.035 });
+      for (let i = 0; i < 3; i++) noise(0.1 + i * 0.09 + Math.random() * 0.05, 0.03, { freq: 2500 + Math.random() * 3500, q: 2, gain: 0.12 });
     },
     // A short circuit: a crackle of sparks over a low electric buzz.
     short() {

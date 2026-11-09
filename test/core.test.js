@@ -308,3 +308,12 @@ test('overclock power: harder boards refill more per trace', () => {
   assert.ok(hard.max >= easy.max);
   assert.ok(easy.cost >= 3 && hard.cost > hard.refill);
 });
+
+test('only boards maxed out on every setting get the hardest generator', () => {
+  const max = { shape: 'flat', w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, seed: 1 };
+  assert.strictEqual(Core.customSpec(max).pick, 1);
+  assert.strictEqual(Core.customSpec(Object.assign({}, max, { shape: 'cube' })).hard, 1);
+  assert.strictEqual(Core.customSpec(Object.assign({}, max, { w: 29 })).pick, 0.6);
+  assert.strictEqual(Core.customSpec(Object.assign({}, max, { bend: 1 })).hard, 0.75);
+  assert.strictEqual(Core.customSpec(Object.assign({}, max, { shape: 'cube', n: 19 })).pick, 0.6);
+});
