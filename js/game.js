@@ -1,5 +1,5 @@
 /*
- * Unfold: screens, the circuit board, the unzip, short, and core
+ * Circuit Jam: screens, the circuit board, the unzip, short, and core
  * animations, tools, and progress. The rules and the level generator live
  * in core.js. Generating a board takes a few milliseconds, so everything
  * runs on the page.
@@ -7,8 +7,8 @@
 (function () {
   'use strict';
 
-  const Core = window.UnfoldCore;
-  const Sound = window.UnfoldSound;
+  const Core = window.CircuitJamCore;
+  const Sound = window.CircuitJamSound;
   const $ = (id) => document.getElementById(id);
   const reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -93,7 +93,10 @@
 
   // ---------- Saved progress (this browser only) ----------
 
-  const STORE_KEY = 'unfold-v1';
+  const STORE_KEY = 'circuit-jam-v1';
+  // The game used to be called Unfold; progress saved under that name is
+  // picked up the first time, so nobody loses their stars.
+  const OLD_STORE_KEY = 'unfold-v1';
 
   function defaults() {
     return {
@@ -108,7 +111,7 @@
   function load() {
     const base = defaults();
     try {
-      const raw = localStorage.getItem(STORE_KEY);
+      const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(OLD_STORE_KEY);
       if (raw) {
         const data = JSON.parse(raw);
         return Object.assign(base, data, { custom: Object.assign(base.custom, data.custom) });
@@ -3111,7 +3114,7 @@
 
   // For the browser play-test: where a trace's first visible cell is on
   // screen, if any of it faces you.
-  window.__unfoldTest = {
+  window.__circuitJamTest = {
     cubeZoom: () => cube.zoom,
     facesCleared: () => cube.cleared.size,
     finaleTime: () => {

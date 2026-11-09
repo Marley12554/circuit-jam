@@ -24,17 +24,17 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     p.on('pageerror', (e) => errors.push(String(e)));
     p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
     // Seeds progress once, so a reload keeps whatever the page saved since.
-    if (state) await p.addInitScript((s) => localStorage.getItem('unfold-v1') || localStorage.setItem('unfold-v1', JSON.stringify(s)), state);
+    if (state) await p.addInitScript((s) => localStorage.getItem('circuit-jam-v1') || localStorage.setItem('circuit-jam-v1', JSON.stringify(s)), state);
     await p.goto(url);
     return p;
   }
   const num = async (p, id) => Number(await p.textContent('#' + id));
-  const stored = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('unfold-v1')));
+  const stored = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('circuit-jam-v1')));
 
   // Screen position of the middle of one of arrow i's cells.
   async function tapArrow(p, i) {
     const xy = await p.evaluate((i) => {
-      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+      const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
       const lv = run.puzzle;
       const svg = document.querySelector('.arrows');
       const r = svg.getBoundingClientRect();
@@ -48,15 +48,15 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
   // The page's own rules, on the saved run.
   const freeNow = (p) =>
     p.evaluate(() => {
-      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+      const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
       const gone = run.puzzle.arrows.map((a, i) => run.gone.includes(i));
-      return window.UnfoldCore.freeArrows(run.puzzle, gone);
+      return window.CircuitJamCore.freeArrows(run.puzzle, gone);
     });
   const blockedNow = (p) =>
     p.evaluate(() => {
-      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+      const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
       const gone = run.puzzle.arrows.map((a, i) => run.gone.includes(i));
-      const free = new Set(window.UnfoldCore.freeArrows(run.puzzle, gone));
+      const free = new Set(window.CircuitJamCore.freeArrows(run.puzzle, gone));
       return run.puzzle.arrows.map((a, i) => i).find((i) => !gone[i] && !free.has(i));
     });
   async function clearAll(p) {
@@ -175,7 +175,7 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.waitForSelector('.arrow');
     const code = await p.textContent('#levelTitle');
     check(/^1112[0-2]{3}-\d{4}$/.test(code), 'title shows the puzzle code: ' + code);
-    const before = await p.evaluate(() => JSON.parse(localStorage.getItem('unfold-v1')).run.puzzle.arrows);
+    const before = await p.evaluate(() => JSON.parse(localStorage.getItem('circuit-jam-v1')).run.puzzle.arrows);
     await clearAll(p);
     check((await p.textContent('#winCode')).includes(code), 'win card shows the code');
     await p.click('#winHome');
@@ -186,7 +186,7 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.fill('#codeInput', code);
     await p.click('#codeForm button');
     await p.waitForSelector('.arrow');
-    const after = await p.evaluate(() => JSON.parse(localStorage.getItem('unfold-v1')).run.puzzle.arrows);
+    const after = await p.evaluate(() => JSON.parse(localStorage.getItem('circuit-jam-v1')).run.puzzle.arrows);
     check(JSON.stringify(before) === JSON.stringify(after), 'the code makes the same board');
     await p.context().close();
   }
@@ -199,25 +199,25 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     check(!(await p.isHidden('.stepper[data-key="n"]')) && (await p.isHidden('.stepper[data-key="w"]')), 'cube shape shows face size, hides width');
     await p.click('#mixBtn');
     await p.waitForSelector('.cube-canvas');
-    await p.waitForFunction(() => JSON.parse(localStorage.getItem('unfold-v1')).run);
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem('circuit-jam-v1')).run);
     const code = await p.textContent('#levelTitle');
     check(/^C04[0-2]{3}-\d+$/.test(code), 'cube title shows a cube code: ' + code);
     const total = await num(p, 'leftCount');
     // A free trace with a cell facing us (turning the cube if needed).
     async function facing(wantFree) {
       return p.evaluate((wantFree) => {
-        const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+        const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
         const gone = run.puzzle.arrows.map((a, i) => run.gone.includes(i));
-        const free = new Set(window.UnfoldCore.freeArrows(run.puzzle, gone));
+        const free = new Set(window.CircuitJamCore.freeArrows(run.puzzle, gone));
         const pool = run.puzzle.arrows.map((a, i) => i).filter((i) => !gone[i] && free.has(i) === wantFree);
         for (const i of pool) {
-          const pt = window.__unfoldTest.cubePoint(i);
+          const pt = window.__circuitJamTest.cubePoint(i);
           if (pt) return { i, pt };
         }
         if (!pool.length) return null;
         const a = run.puzzle.arrows[pool[0]];
-        window.__unfoldTest.showFace(a.cells[a.cells.length - 1][0]);
-        return { i: pool[0], pt: window.__unfoldTest.cubePoint(pool[0]) };
+        window.__circuitJamTest.showFace(a.cells[a.cells.length - 1][0]);
+        return { i: pool[0], pt: window.__circuitJamTest.cubePoint(pool[0]) };
       }, wantFree);
     }
     for (let k = 0; k < 2; k++) {
@@ -236,7 +236,7 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     // the front, a small turn still hides the side faces (in perspective
     // they face away); a bigger one shows one.
     const faces = await p.evaluate(() => {
-      const T = window.__unfoldTest;
+      const T = window.__circuitJamTest;
       T.showFace(0);
       const square = T.visibleFaces();
       T.turn(0.09, 0);
@@ -262,14 +262,14 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     check((await num(p, 'leftCount')) === before, 'the cube resumes where it was');
     check((await p.textContent('#setName')) === 'Your cube', 'resumed as a cube');
     // The code rebuilds the same cube.
-    const arrows = await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('unfold-v1')).run.puzzle.arrows));
+    const arrows = await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('circuit-jam-v1')).run.puzzle.arrows));
     await p.click('#homeBtn');
     await p.click('#customBtn');
     await p.fill('#codeInput', code.toLowerCase());
     await p.click('#codeForm button');
     await p.waitForSelector('.cube-canvas');
-    await p.waitForFunction((c) => { const r = JSON.parse(localStorage.getItem('unfold-v1')).run; return r && r.custom && r.custom.seed === c; }, Number(code.split('-')[1]));
-    const again = await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('unfold-v1')).run.puzzle.arrows));
+    await p.waitForFunction((c) => { const r = JSON.parse(localStorage.getItem('circuit-jam-v1')).run; return r && r.custom && r.custom.seed === c; }, Number(code.split('-')[1]));
+    const again = await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('circuit-jam-v1')).run.puzzle.arrows));
     check(again === arrows, 'a cube code rebuilds the same cube');
     await p.context().close();
   }
@@ -280,22 +280,22 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     const p = await open({ sound: false, custom: { shape: 'cube', n: 3, w: 8, h: 10, density: 2, length: 1, bend: 1 } });
     await p.click('#customBtn');
     await p.click('#mixBtn');
-    await p.waitForFunction(() => { const r = JSON.parse(localStorage.getItem('unfold-v1')).run; return r && r.puzzle.kind === 'cube'; });
-    const faces = () => p.evaluate(() => window.__unfoldTest.facesCleared());
+    await p.waitForFunction(() => { const r = JSON.parse(localStorage.getItem('circuit-jam-v1')).run; return r && r.puzzle.kind === 'cube'; });
+    const faces = () => p.evaluate(() => window.__circuitJamTest.facesCleared());
     const startFaces = await faces();
     let sawSpeech = false;
     for (let k = 0; k < 80 && (await p.isHidden('#win')); k++) {
       const pt = await p.evaluate(() => {
-        const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+        const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
         if (!run) return null;
         const gone = run.puzzle.arrows.map((a, i) => run.gone.includes(i));
-        const i = window.UnfoldCore.freeArrows(run.puzzle, gone)[0];
+        const i = window.CircuitJamCore.freeArrows(run.puzzle, gone)[0];
         if (i == null) return null;
-        let at = window.__unfoldTest.cubePoint(i);
+        let at = window.__circuitJamTest.cubePoint(i);
         if (!at) {
           const a = run.puzzle.arrows[i];
-          window.__unfoldTest.showFace(a.cells[a.cells.length - 1][0]);
-          at = window.__unfoldTest.cubePoint(i);
+          window.__circuitJamTest.showFace(a.cells[a.cells.length - 1][0]);
+          at = window.__circuitJamTest.cubePoint(i);
         }
         return at;
       });
@@ -323,9 +323,9 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     check(await p.isDisabled('.stepper[data-key="n"] [data-step="1"]'), 'and no further');
     const t0 = Date.now();
     await p.click('#mixBtn');
-    await p.waitForFunction(() => { const r = JSON.parse(localStorage.getItem('unfold-v1')).run; return r && r.puzzle.kind === 'cube'; }, null, { timeout: 20000 });
+    await p.waitForFunction(() => { const r = JSON.parse(localStorage.getItem('circuit-jam-v1')).run; return r && r.puzzle.kind === 'cube'; }, null, { timeout: 20000 });
     console.log('     (20-face cube ready in ' + (Date.now() - t0) + ' ms)');
-    const zoom = () => p.evaluate(() => window.__unfoldTest.cubeZoom());
+    const zoom = () => p.evaluate(() => window.__circuitJamTest.cubeZoom());
     await p.click('[data-zoom="in"]');
     check((await zoom()) > 1.4, 'zoom in enlarges the cube');
     await p.click('[data-zoom="fit"]');
@@ -350,11 +350,11 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     check((await num(p, 'leftCount')) === before, 'a pinch never taps a trace');
     // Tap a free trace that is on screen at this zoom.
     const target = await p.evaluate(() => {
-      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
-      const free = window.UnfoldCore.freeArrows(run.puzzle, run.puzzle.arrows.map((a, i) => run.gone.includes(i)));
+      const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
+      const free = window.CircuitJamCore.freeArrows(run.puzzle, run.puzzle.arrows.map((a, i) => run.gone.includes(i)));
       const r = document.querySelector('.cube-canvas').getBoundingClientRect();
       for (const i of free) {
-        const pt = window.__unfoldTest.cubePoint(i);
+        const pt = window.__circuitJamTest.cubePoint(i);
         if (pt && pt[0] > r.left + 20 && pt[0] < r.right - 60 && pt[1] > r.top + 60 && pt[1] < r.bottom - 20) return pt;
       }
       return null;
@@ -389,10 +389,10 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     // Use the free trace cell nearest the middle of the board, so zooming
     // in on it never pushes it under the zoom buttons in the corner.
     const target = await p.evaluate(() => {
-      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+      const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
       const { w, h } = run.puzzle;
       let best = null;
-      for (const i of window.UnfoldCore.freeArrows(run.puzzle, null)) {
+      for (const i of window.CircuitJamCore.freeArrows(run.puzzle, null)) {
         for (const [x, y] of run.puzzle.arrows[i].cells) {
           const d = Math.hypot(x + 0.5 - w / 2, y + 0.5 - h / 2);
           if (!best || d < best.d) best = { d, x, y };
@@ -401,7 +401,7 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
       return [best.x, best.y];
     });
     const cellOf = () => p.evaluate(([x, y]) => {
-      const run = JSON.parse(localStorage.getItem('unfold-v1')).run;
+      const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
       const svg = document.querySelector('.arrows').getBoundingClientRect();
       const k = svg.width / run.puzzle.w;
       return [svg.left + (x + 0.5) * k, svg.top + (y + 0.5) * k];

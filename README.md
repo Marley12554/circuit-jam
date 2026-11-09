@@ -1,4 +1,4 @@
-# Unfold
+# Circuit Jam
 
 A sci-fi circuit puzzle for all ages. The board is a glowing chip packed with bent traces, each ending in an arrow. Tap one: if nothing is in front of its arrow, it unzips off the board, its body following the arrow around every bend, then runs along the bus around the rim into the power core. If something is in the way, it shorts out and settles back. Clear the board without a single short for 3 stars.
 
@@ -14,7 +14,7 @@ python3 -m http.server 8000
 
 Then visit http://localhost:8000.
 
-To put it online with GitHub Pages: make the repository public, open **Settings → Pages**, choose **Deploy from a branch**, pick `main` and `/ (root)`, and save. The game appears at `https://<your-username>.github.io/unfold/`.
+To put it online with GitHub Pages: make the repository public, open **Settings → Pages**, choose **Deploy from a branch**, pick `main` and `/ (root)`, and save. The game appears at `https://<your-username>.github.io/circuit-jam/`.
 
 ## What's in the game
 
@@ -86,7 +86,7 @@ node tools/playtest.js http://localhost:8765/index.html
 Plays whole levels through the real page in headless Chromium and checks the cube (tapping, shorts, spinning, resume, codes), zoom on a 30 by 40 board, shorts, stars, hints, restart, pause and resume, the level map, presets, puzzle codes, and keyboard play. This one and `tools/shoot.js` (screenshots) need Playwright.
 
 ```bash
-node tools/build-artifact.js dist/unfold.html --standalone
+node tools/build-artifact.js dist/circuit-jam.html --standalone
 ```
 
 Packs the whole game into one HTML file.

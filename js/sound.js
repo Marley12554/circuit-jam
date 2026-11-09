@@ -289,5 +289,5 @@
     },
   };
 
-  window.UnfoldSound = Sound;
+  window.CircuitJamSound = Sound;
 })();

@@ -1,11 +1,11 @@
 {
-  "name": "unfold",
+  "name": "circuit-jam",
   "version": "1.0.0",
   "private": true,
   "description": "A bright puzzle game: tap bent arrows to send them off the board, with a level generator.",
   "scripts": {
     "test": "node --test test/*.test.js",
     "campaign": "node tools/campaign.js 1 70",
-    "build": "node tools/build-artifact.js dist/unfold.html --standalone"
+    "build": "node tools/build-artifact.js dist/circuit-jam.html --standalone"
   }
 }

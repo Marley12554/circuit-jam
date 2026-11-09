@@ -1,5 +1,5 @@
 /*
- * Unfold core: the rules, the level generator, the difficulty meter, the
+ * Circuit Jam core: the rules, the level generator, the difficulty meter, the
  * campaign, share codes, and stars. No DOM. Runs in the page and in Node.
  *
  * A board is a w by h grid holding arrows. An arrow is a bent path of cells,
@@ -1242,5 +1242,5 @@
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else root.UnfoldCore = api;
+  else root.CircuitJamCore = api;
 })(typeof self !== 'undefined' ? self : this);

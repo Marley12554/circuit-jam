@@ -22,7 +22,7 @@ fs.mkdirSync(out, { recursive: true });
     const p = await ctx.newPage();
     p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
     p.on('pageerror', (e) => errors.push(String(e)));
-    if (state) await p.addInitScript((s) => localStorage.setItem('unfold-v1', JSON.stringify(s)), state);
+    if (state) await p.addInitScript((s) => localStorage.setItem('circuit-jam-v1', JSON.stringify(s)), state);
     await p.goto(url);
     await p.waitForTimeout(500);
     return p;
@@ -30,7 +30,7 @@ fs.mkdirSync(out, { recursive: true });
   // Clicks the middle of the first cell of arrow i.
   async function tapArrow(p, i) {
     const xy = await p.evaluate((i) => {
-      const lv = JSON.parse(localStorage.getItem('unfold-v1')).run.puzzle;
+      const lv = JSON.parse(localStorage.getItem('circuit-jam-v1')).run.puzzle;
       const r = document.querySelector('.arrows').getBoundingClientRect();
       const cell = r.width / lv.w;
       const [x, y] = lv.arrows[i].cells[0];

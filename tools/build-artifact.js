@@ -27,7 +27,7 @@ const scripts =
 
 const page = body.replace(/<script src="js\/[^"]+"><\/script>\n?/g, '').trimEnd() + '\n' + scripts + '\n';
 const head = [
-  '<title>Unfold</title>',
+  '<title>Circuit Jam</title>',
   '<meta name="claude:viewport-fit-sides" content="cover">',
   description,
   '<link rel="preconnect" href="https://fonts.googleapis.com">',
