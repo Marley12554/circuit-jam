@@ -449,7 +449,7 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await tapArrow(p, (await freeNow(p))[0]);
     const over = await p.evaluate(() => __circuitJamTest.power());
     check(over.S > over.max, 'a clear on a full bar overcharges the battery: ' + over.S.toFixed(1) + ' of ' + over.max.toFixed(1));
-    check(await p.evaluate(() => parseFloat(document.getElementById('powerOver').style.width) > 0), 'the overcharge shows on the bar');
+    check(await p.evaluate(() => parseFloat(document.getElementById('powerOver').style.getPropertyValue('--fill')) > 0), 'the overcharge shows on the bar');
     const blocked = await blockedNow(p);
     await p.evaluate(() => __circuitJamTest.setPower(10));
     await tapArrow(p, blocked);

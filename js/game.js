@@ -790,8 +790,8 @@
     // Past full, the battery: a brighter layer over the same bar, up to a
     // second bar's worth. Drain uses it up first.
     const over = Math.max(0, Math.min(1, (oc.S - oc.max) / (oc.cap - oc.max)));
-    $('powerFill').style.width = (p * 100).toFixed(1) + '%';
-    $('powerOver').style.width = (over * 100).toFixed(1) + '%';
+    $('powerFill').style.setProperty('--fill', p.toFixed(4));
+    $('powerOver').style.setProperty('--fill', over.toFixed(4));
     bar.classList.toggle('overcharged', over > 0);
     bar.classList.toggle('full', over >= 0.999);
     bar.classList.toggle('low', p < DANGER);

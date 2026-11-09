@@ -1863,24 +1863,45 @@ input:focus-visible {
 }
 
 .power i {
+  /* Every layer spans the whole track and is revealed from the left up to
+     --fill (0 to 1), its end cut on the same slant as the stripes. The
+     stripes and colors stay put; only the slanted edge moves, so a drain
+     reads as the bar shrinking, not a conveyor. */
+  --fill: 1;
+  --edge: calc(var(--fill) * (100% + 5px));
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 100%;
+  inset: 0;
   background:
-    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0) 0 8px, rgba(255, 255, 255, 0.45) 8px 10px) 0 0 / 200% 100%,
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0) 0 8px, rgba(255, 255, 255, 0.45) 8px 10px),
     linear-gradient(90deg, var(--lab), var(--volt));
-  box-shadow: 0 0 10px var(--volt);
-  transition: width 0.12s linear;
-  animation: oc-flow 0.8s linear infinite;
+  clip-path: polygon(0 0, var(--edge) 0, calc(var(--edge) - 5px) 100%, 0 100%);
+  transition: clip-path 0.12s linear;
+}
+
+/* A bright tip along the slanted edge, so the eye follows it. */
+.power i::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--edge) - 7px);
+  width: 4px;
+  background: #fff;
+  box-shadow: 0 0 6px #fff;
+  transform: skewX(-25deg);
+  transition: left 0.12s linear;
 }
 
 .power-track .over {
-  width: 0;
+  --fill: 0;
   background:
-    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0) 0 8px, rgba(255, 255, 255, 0.6) 8px 10px) 0 0 / 200% 100%,
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0) 0 8px, rgba(255, 255, 255, 0.6) 8px 10px),
     linear-gradient(90deg, #fff3b0, #ffd84d);
-  box-shadow: 0 0 12px #ffd84d, 0 0 4px #fff;
-  animation: oc-flow 0.5s linear infinite;
+}
+
+.power-track .over::after {
+  background: #fffbe6;
+  box-shadow: 0 0 8px #ffd84d;
 }
 
 .power.overcharged .power-track {
@@ -1888,19 +1909,18 @@ input:focus-visible {
 }
 
 .power.full .over {
-  animation: oc-flow 0.5s linear infinite, oc-low 0.6s steps(1) infinite;
+  animation: oc-low 0.6s steps(1) infinite;
 }
 
 .power.low i {
   background:
-    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0) 0 8px, rgba(255, 255, 255, 0.4) 8px 10px) 0 0 / 200% 100%,
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0) 0 8px, rgba(255, 255, 255, 0.4) 8px 10px),
     linear-gradient(90deg, #ff3b5c, #ff8a5c);
-  box-shadow: 0 0 12px #ff3b5c;
-  animation: oc-flow 0.5s linear infinite, oc-low 0.45s steps(1) infinite;
+  animation: oc-low 0.45s steps(1) infinite;
 }
 
 .power.charge i {
-  animation: oc-flow 0.8s linear infinite, oc-charge 0.35s ease-out;
+  animation: oc-charge 0.35s ease-out;
 }
 
 .power.hit {
