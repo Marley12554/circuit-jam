@@ -560,7 +560,9 @@ input:focus-visible {
 .level-btn.current {
   background: var(--lab);
   color: var(--on-go);
-  box-shadow: none;
+  /* The same thin inner rim as the other buttons, in a lighter tint of the
+     fill so the filled button keeps its edge. */
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--lab) 45%, #ffffff);
 }
 
 .more-labs {
@@ -1790,7 +1792,6 @@ input:focus-visible {
     color-mix(in srgb, var(--volt) 10%, var(--panel-solid));
   box-shadow: inset 0 0 0 2px var(--volt), inset 0 0 14px rgba(159, 244, 255, 0.45);
   color: var(--volt-hot);
-  animation: oc-flow 1.6s linear infinite, oc-buzz 2.3s steps(1) infinite;
 }
 
 .level-btn.overclock.done {
@@ -1815,7 +1816,7 @@ input:focus-visible {
   height: 13px;
   fill: var(--volt);
   filter: drop-shadow(0 0 3px var(--volt));
-  animation: oc-bolt 1.1s steps(1) infinite;
+  animation: bolt-pulse 1.1s ease-in-out infinite alternate;
 }
 
 .level-btn.overclock.current .oc-bolt {

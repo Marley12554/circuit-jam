@@ -1240,7 +1240,7 @@
       const rng = makeRng(hashString('endless:' + level));
       const size = ENDLESS_SIZES[rng.int(ENDLESS_SIZES.length)];
       row = size.concat([0.5 + 0.5 * rng()]);
-      overclock = rng() < 0.3;
+      overclock = isOverclocked(set.index, slot);
     }
     if (!row) return { level, set: set.name, tutorial: true, overclock: false };
     return {
@@ -1265,9 +1265,35 @@
    * of each set, and from the fourth set on, the last one too. Level 14 is
    * the first.
    */
+  /*
+   * Which levels in a set are overclocked: none in the first set, then two
+   * per set (three from the fourth set on), at seeded spots that differ
+   * from set to set and never sit side by side. The second set's first
+   * one is always its fourth level (14), where the drone explains it.
+   */
+  const ocSlots = new Map();
+
+  function overclockSlots(setIndex) {
+    if (setIndex < 1) return [];
+    if (ocSlots.has(setIndex)) return ocSlots.get(setIndex);
+    const rng = makeRng(hashString('overclock:' + setIndex));
+    const want = setIndex >= 3 ? 3 : 2;
+    // Every way to place them (never the set's first level, never two
+    // side by side), picked from evenly.
+    const ways = [];
+    const walk = (from, chosen) => {
+      if (chosen.length === want) return ways.push(chosen);
+      for (let slot = from; slot <= 9; slot++) walk(slot + 2, chosen.concat(slot));
+    };
+    walk(1, []);
+    const fit = setIndex === 1 ? ways.filter((w) => w.includes(3)) : ways;
+    const picks = fit[rng.int(fit.length)];
+    ocSlots.set(setIndex, picks);
+    return picks;
+  }
+
   function isOverclocked(setIndex, slot) {
-    if (setIndex < 1) return false;
-    return slot === 3 || slot === 7 || (setIndex >= 3 && slot === 9);
+    return overclockSlots(setIndex).includes(slot);
   }
 
   /*
