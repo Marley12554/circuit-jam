@@ -422,6 +422,79 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.context().close();
   }
 
+  // Overclock: level 14 is timed. The map marks it, the core drains, clears
+  // top it up, shorts drain it, an empty core loses, and Try again resets.
+  {
+    const p = await open(progressTo(14));
+    check((await p.textContent('#playSub')).includes('Overclocked'), 'home says the next level is overclocked');
+    await p.click('#levelsBtn');
+    const ocLabel = await p.getAttribute('.level-btn.overclock >> nth=0', 'aria-label');
+    check(/^Level 14, overclocked/.test(ocLabel), 'the map marks level 14 as overclocked: ' + ocLabel);
+    check(!(await p.locator('[aria-label^="Level 13,"]').evaluate((b) => b.classList.contains('overclock'))), 'level 13 is not overclocked');
+    await p.goto(url);
+    await p.click('#playBtn');
+    await p.waitForSelector('.arrow');
+    check(!(await p.isHidden('#power')), 'the power bar shows');
+    check(await p.evaluate(() => document.getElementById('board').classList.contains('overclock')), 'the board is electrified');
+    const start = await p.evaluate(() => __circuitJamTest.power());
+    await p.waitForTimeout(2600);
+    const drained = await p.evaluate(() => __circuitJamTest.power());
+    check(drained.S < start.S - 0.5, 'the core drains: ' + start.S.toFixed(1) + ' to ' + drained.S.toFixed(1));
+    await p.evaluate(() => __circuitJamTest.setPower(5));
+    await tapArrow(p, (await freeNow(p))[0]);
+    const topped = (await p.evaluate(() => __circuitJamTest.power())).S;
+    check(topped > 5.5, 'a clear tops the core up: ' + topped.toFixed(2));
+    const blocked = await blockedNow(p);
+    await p.evaluate(() => __circuitJamTest.setPower(10));
+    await tapArrow(p, blocked);
+    const hit = (await p.evaluate(() => __circuitJamTest.power())).S;
+    check(hit < 10 - start.cost + 0.3, 'a short drains a chunk: ' + hit.toFixed(2));
+    // Leaving and coming back keeps the power.
+    await p.evaluate(() => __circuitJamTest.setPower(8));
+    await p.reload();
+    await p.click('#playBtn');
+    await p.waitForSelector('.arrow');
+    const resumed = (await p.evaluate(() => __circuitJamTest.power())).S;
+    check(resumed > 7 && resumed <= 8.01, 'resume keeps the power: ' + resumed.toFixed(2));
+    await p.evaluate(() => __circuitJamTest.setPower(0.05));
+    await p.waitForSelector('#win:not([hidden])', { timeout: 4000 });
+    check((await p.textContent('#winTitle')) === 'Core drained!', 'an empty core loses the board');
+    check(!(await stored(p)).run, 'a lost board leaves no run to resume');
+    check(!(await stored(p)).stars[14], 'a lost board earns no stars');
+    await p.click('#nextBtn');
+    const fresh = await p.evaluate(() => __circuitJamTest.power());
+    check(await p.isHidden('#win'), 'Try again closes the card');
+    check(Math.abs(fresh.S - fresh.max) < 0.5, 'Try again refills the core');
+    check((await num(p, 'leftCount')) === (await stored(p)).run.puzzle.arrows.length, 'Try again puts every trace back');
+    await clearAll(p);
+    check((await p.textContent('#winTitle')) !== 'Core drained!' && (await p.textContent('#winStats')).includes('power left'), 'clearing in time wins, with power left');
+    check(!(await p.isHidden('#replayBtn')) && !(await p.isHidden('#winStars')), 'the win card is whole again after a loss');
+    await p.context().close();
+  }
+
+  // Build your own: presets keep the shape, and Overclock works on a cube.
+  {
+    const p = await open({ sound: false });
+    await p.click('#customBtn');
+    await p.click('.preset[data-preset="hard"]');
+    await p.click('label:has(input[name="shape"][value="cube"])');
+    check((await p.textContent('#nOut')) === '8', 'Hard on a cube is 8 by 8 by 8');
+    check((await p.getAttribute('.preset[data-preset="hard"]', 'aria-pressed')) === 'true', 'the preset stays lit across shapes');
+    await p.click('.preset[data-preset="easy"]');
+    check((await p.textContent('#nOut')) === '3' && !(await p.isHidden('.stepper[data-key="n"]')), 'a preset keeps the cube shape');
+    await p.click('label:has(input[name="shape"][value="flat"])');
+    check((await p.getAttribute('.preset[data-preset="easy"]', 'aria-pressed')) === 'true', 'and stays lit going back to flat');
+    await p.click('label:has(input[name="shape"][value="cube"])');
+    await p.click('.oc-toggle');
+    check((await stored(p)).custom.overclock === true, 'the Overclock switch is saved');
+    await p.click('#mixBtn');
+    await p.waitForFunction(() => window.__circuitJamTest.power());
+    const code = await p.textContent('#levelTitle');
+    check(/^C03\d{3}-\d{4}X$/.test(code), 'an overclocked cube code ends in X: ' + code);
+    check(!(await p.isHidden('#power')), 'an overclocked cube shows the power bar');
+    await p.context().close();
+  }
+
   // Keyboard: arrow keys move a box, Enter taps.
   {
     const p = await open({ sound: false });

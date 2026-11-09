@@ -55,8 +55,10 @@
     2: 'A blocked trace shorts out and stays put. Look before you tap!',
     6: 'Bent traces! Only the path in front of the arrow matters. The rest just follows.',
     11: 'New chip, new colors. Find the traces with a clear path!',
+    14: 'Overclocked! The core drains while you play. Clear traces fast to keep it powered, and every short drains it more.',
     21: 'Longer traces that twist and turn. Follow each one to its arrow!',
   };
+  const OC_CHEERS = ['Overclocked! Keep the core powered.', 'Overclocked! Move fast, tap clean.', 'The core is draining. Go!'];
   const CHEERS = ["Let's power this up!", 'Find a clear path!', 'Look before you tap!', 'Charge the core!', 'One clear lane at a time!'];
   const CLEARS = ['Charged!', 'Into the core!', 'Clean signal!', 'Nice routing!', 'Power up!', 'Sharp eye!'];
 
@@ -85,10 +87,10 @@
   ];
 
   const PRESETS = [
-    { id: 'easy', name: 'Easy', w: 6, h: 7, density: 0, length: 0, bend: 0 },
-    { id: 'medium', name: 'Medium', w: 8, h: 10, density: 1, length: 1, bend: 1 },
-    { id: 'hard', name: 'Hard', w: 10, h: 12, density: 2, length: 1, bend: 1 },
-    { id: 'genius', name: 'Genius', w: 12, h: 16, density: 2, length: 2, bend: 2 },
+    { id: 'easy', name: 'Easy', w: 6, h: 7, n: 3, density: 0, length: 0, bend: 0 },
+    { id: 'medium', name: 'Medium', w: 8, h: 10, n: 5, density: 1, length: 1, bend: 1 },
+    { id: 'hard', name: 'Hard', w: 10, h: 12, n: 8, density: 2, length: 1, bend: 1 },
+    { id: 'genius', name: 'Genius', w: 12, h: 16, n: 12, density: 2, length: 2, bend: 2 },
   ];
 
   // ---------- Saved progress (this browser only) ----------
@@ -144,7 +146,12 @@
   let screen = 'home';
 
   function show(name) {
+    if (screen === 'play' && name !== 'play' && game.oc && !game.done) saveRun();
     screen = name;
+    if (name === 'play' && game.oc) {
+      game.oc.grace = performance.now() + 1000;
+      ocStart();
+    }
     ['home', 'levels', 'custom', 'play'].forEach((id) => {
       $(id).hidden = id !== name;
     });
@@ -187,7 +194,7 @@
     const run = saved.run;
     // A run of the level Play would start is resumed by Play itself.
     const runIsNext = run && run.mode === 'level' && run.level === n;
-    $('playSub').textContent = 'Level ' + n + ' · ' + set.name + (runIsNext ? ' · resume' : '');
+    $('playSub').textContent = 'Level ' + n + ' · ' + set.name + (Core.levelSpec(n).overclock ? ' · Overclocked' : '') + (runIsNext ? ' · resume' : '');
     $('resumeBtn').hidden = !run || runIsNext;
     $('playBtn').classList.toggle('primary', !run || runIsNext);
     if (run && !runIsNext) {
@@ -222,12 +229,14 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         const stars = saved.stars[n] || 0;
-        btn.className = 'level-btn' + (n === next ? ' current' : stars ? ' done' : '');
+        const oc = Core.levelSpec(n).overclock;
+        btn.className = 'level-btn' + (n === next ? ' current' : stars ? ' done' : '') + (oc ? ' overclock' : '');
         btn.innerHTML =
           '<span>' + n + '</span><span class="mini-stars">' +
           [1, 2, 3].map((s) => '<i class="' + (s <= stars ? 'on' : '') + '"></i>').join('') +
           '</span>';
-        btn.setAttribute('aria-label', 'Level ' + n + ', ' + stars + (stars === 1 ? ' star' : ' stars'));
+        if (oc) btn.insertAdjacentHTML('beforeend', '<svg class="oc-bolt" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 0 2.5 9h4.5L5.5 16l8-10H9z"/></svg>');
+        btn.setAttribute('aria-label', 'Level ' + n + (oc ? ', overclocked' : '') + ', ' + stars + (stars === 1 ? ' star' : ' stars'));
         btn.addEventListener('click', () => startLevel(n));
         grid.appendChild(btn);
       }
@@ -278,6 +287,7 @@
       row.querySelector('[data-step="-1"]').disabled = c[key] <= limits[key][0];
       row.querySelector('[data-step="1"]').disabled = c[key] >= limits[key][1];
     });
+    $('ocToggle').checked = !!c.overclock;
     document.querySelectorAll('input[name="shape"]').forEach((r) => {
       r.checked = r.value === c.shape;
       r.closest('label').classList.toggle('on', r.checked);
@@ -294,14 +304,16 @@
     $('customBadge').hidden = !!match;
   }
 
+  // A preset sets both a flat size and a cube size, so it works for either
+  // shape; it matches when the current shape's size and every choice agree.
   function presetMatches(p, c) {
-    return c.shape === 'flat' && ['w', 'h'].concat(CHOICE_KEYS).every((k) => p[k] === c[k]);
+    const size = c.shape === 'cube' ? ['n'] : ['w', 'h'];
+    return size.concat(CHOICE_KEYS).every((k) => p[k] === c[k]);
   }
 
   function applyPreset(p) {
     const before = customSnapshot();
-    ['w', 'h'].concat(CHOICE_KEYS).forEach((k) => (saved.custom[k] = p[k]));
-    saved.custom.shape = 'flat';
+    ['w', 'h', 'n'].concat(CHOICE_KEYS).forEach((k) => (saved.custom[k] = p[k]));
     save();
     renderCustom();
     flashChanges(before, customSnapshot());
@@ -310,7 +322,7 @@
   // What each setting shows, to light up the ones a preset changed.
   function customSnapshot() {
     const c = saved.custom;
-    return { shapeRow: c.shape, wOut: c.w, hOut: c.h, densityRow: c.density, lengthRow: c.length, bendRow: c.bend };
+    return { wOut: c.w, hOut: c.h, nOut: c.n, densityRow: c.density, lengthRow: c.length, bendRow: c.bend };
   }
 
   function flashChanges(before, after) {
@@ -340,13 +352,47 @@
     );
   }
 
+  // A tiny cube with each face divided into the preset's grid.
+  function presetCube(p) {
+    const n = p.n;
+    const pal = paletteOf(CUSTOM_PALETTE);
+    // Three faces of an isometric cube, 0 to 1 across each face.
+    const top = (u, v) => [50 + (u - v) * 26, 6 + (u + v) * 15];
+    const left = (u, v) => [24 + u * 26, 21 + u * 15 + v * 30];
+    const right = (u, v) => [50 + u * 26, 36 - u * 15 + v * 30];
+    const face = (f, fill) => {
+      const c = [f(0, 0), f(1, 0), f(1, 1), f(0, 1)].map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ');
+      let lines = '';
+      for (let k = 1; k < n; k++) {
+        const a = f(k / n, 0);
+        const b = f(k / n, 1);
+        const c2 = f(0, k / n);
+        const d = f(1, k / n);
+        lines += 'M' + a.join(' ') + 'L' + b.join(' ') + 'M' + c2.join(' ') + 'L' + d.join(' ');
+      }
+      return '<polygon points="' + c + '" fill="' + fill + '"/><path d="' + lines + '" stroke="rgba(80,240,200,0.35)" stroke-width="0.8" fill="none"/>';
+    };
+    return (
+      '<svg class="preset-board" viewBox="0 0 100 70" aria-hidden="true">' +
+      face(top, '#163f48') + face(left, '#0f2d34') + face(right, '#12343c') +
+      '<path d="M24 21 50 36 76 21M50 36V66" stroke="' + COLORS[pal[0]] + '" stroke-width="1.6" fill="none"/>' +
+      '<polygon points="50,6 76,21 76,51 50,66 24,51 24,21" fill="none" stroke="' + COLORS[pal[0]] + '" stroke-width="1.6"/></svg>'
+    );
+  }
+
+  // Flat previews are real boards, so build each once and keep it.
+  const flatPreviews = {};
+
   function buildPresets() {
-    $('presets').innerHTML = PRESETS.map(
-      (p) =>
-        '<button class="preset" type="button" data-preset="' + p.id + '" aria-pressed="false">' + presetBoard(p) +
-        '<span class="preset-name">' + p.name + '</span><span class="preset-icons" aria-hidden="true">' +
-        p.w + '×' + p.h + '</span></button>'
-    ).join('');
+    const cube = saved.custom.shape === 'cube';
+    $('presets').innerHTML = PRESETS.map((p) => {
+      const art = cube ? presetCube(p) : flatPreviews[p.id] || (flatPreviews[p.id] = presetBoard(p));
+      const size = cube ? p.n + '×' + p.n + '×' + p.n : p.w + '×' + p.h;
+      return (
+        '<button class="preset" type="button" data-preset="' + p.id + '" aria-pressed="false">' + art +
+        '<span class="preset-name">' + p.name + '</span><span class="preset-icons" aria-hidden="true">' + size + '</span></button>'
+      );
+    }).join('');
     document.querySelectorAll('.preset').forEach((b) =>
       b.addEventListener('click', () => {
         applyPreset(PRESETS.find((p) => p.id === b.dataset.preset));
@@ -366,6 +412,7 @@
       r.addEventListener('change', () => {
         saved.custom.shape = r.value;
         save();
+        buildPresets();
         renderCustom();
       })
     );
@@ -392,7 +439,7 @@
     clampCustom();
     const c = saved.custom;
     const size = c.shape === 'cube' ? { n: c.n } : { w: c.w, h: c.h };
-    return Object.assign({ shape: c.shape }, size, { density: c.density, length: c.length, bend: c.bend, seed: 1000 + Math.floor(Math.random() * 9000) });
+    return Object.assign({ shape: c.shape }, size, { density: c.density, length: c.length, bend: c.bend, overclock: !!c.overclock, seed: 1000 + Math.floor(Math.random() * 9000) });
   }
 
   // ---------- Live wires on the wall ----------
@@ -538,8 +585,9 @@
       say('That board got tangled. Go back and try again!');
       return;
     }
+    game.overclock = !!puzzle.overclock;
     setPuzzle(puzzle);
-    say(INTROS[n] || pickFrom(CHEERS));
+    say(INTROS[n] || pickFrom(game.overclock ? OC_CHEERS : CHEERS));
     if (n === 1) showHint(bestHint(), true);
     saveRun();
     // Get the next one ready while this one is played.
@@ -572,8 +620,9 @@
         say("I couldn't build that one. Try different settings!");
         return;
       }
+      game.overclock = !!spec.overclock;
       setPuzzle(puzzle);
-      say(spec.shape === 'cube' ? CUBE_INTRO : pickFrom(CHEERS));
+      say(spec.overclock ? (spec.shape === 'cube' ? 'An overclocked cube! Spin fast and keep the core powered.' : pickFrom(OC_CHEERS)) : spec.shape === 'cube' ? CUBE_INTRO : pickFrom(CHEERS));
       saveRun();
     }, 40);
   }
@@ -600,7 +649,185 @@
     game.helped = false;
     game.hinted = -1;
     game.done = false;
+    game.lost = false;
     $('win').hidden = true;
+    game.oc = game.overclock ? newOc() : null;
+    board.classList.toggle('overclock', !!game.oc);
+    board.classList.remove('drained');
+    document.querySelector('.hud').classList.toggle('overclock', !!game.oc);
+    drawPower();
+    ocClearFx();
+    ocStart();
+  }
+
+  // ---------- Overclock ----------
+
+  /*
+   * An overclocked board's core drains every second while you play. Each
+   * trace cleared tops it up, each short knocks a chunk off, and if it runs
+   * dry the board is lost. It only drains while the board is on screen and
+   * the page is in front, and it starts after a moment's grace.
+   */
+  let ocRaf = 0;
+
+  function newOc() {
+    const b = Core.overclockFor(game.puzzle);
+    return Object.assign(b, { S: b.max, grace: performance.now() + 1500, last: 0, beep: 0, arcs: [] });
+  }
+
+  function ocStart() {
+    if (game.oc && !ocRaf) ocRaf = requestAnimationFrame(ocFrame);
+  }
+
+  function ocFrame(now) {
+    ocRaf = 0;
+    const oc = game.oc;
+    if (!oc || game.done || !game.puzzle) {
+      drawPower();
+      ocClearFx();
+      return;
+    }
+    if (screen !== 'play') {
+      oc.last = 0;
+      return;
+    }
+    const dt = oc.last ? Math.min(100, now - oc.last) / 1000 : 0;
+    oc.last = now;
+    // Once every trace is on its way out the board is won, so stop the clock.
+    const running = !document.hidden && $('win').hidden && now > oc.grace && game.gone.some((g) => !g);
+    if (running) oc.S -= dt;
+    drawPower();
+    if (oc.S <= 0) {
+      lose();
+      return;
+    }
+    if (running && oc.S / oc.max < 0.25 && now - oc.beep > 900) {
+      oc.beep = now;
+      Sound.lowPower();
+    }
+    ocCrackle(now);
+    ocRaf = requestAnimationFrame(ocFrame);
+  }
+
+  function ocClearFx() {
+    if (isCube() || !fxCanvas || !lay || boardFx) return;
+    const ctx = fxCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+  }
+
+  function drawPower() {
+    const bar = $('power');
+    const oc = game.oc;
+    bar.hidden = !oc;
+    if (!oc) return;
+    const p = Math.max(0, Math.min(1, oc.S / oc.max));
+    $('powerFill').style.width = (p * 100).toFixed(1) + '%';
+    bar.classList.toggle('low', p < 0.25);
+    bar.setAttribute('aria-valuenow', String(Math.round(p * 100)));
+  }
+
+  function flashPower(cls) {
+    const bar = $('power');
+    bar.classList.remove('charge', 'hit');
+    void bar.offsetWidth;
+    bar.classList.add(cls);
+  }
+
+  function ocRefill() {
+    const oc = game.oc;
+    oc.S = Math.min(oc.max, oc.S + oc.refill);
+    flashPower('charge');
+    drawPower();
+  }
+
+  function ocShort() {
+    game.oc.S -= game.oc.cost;
+    flashPower('hit');
+    drawPower();
+  }
+
+  // Little arcs crackling around the board while the clock runs.
+  function ocCrackle(now) {
+    const oc = game.oc;
+    if (reduceMotion) return;
+    if (isCube()) {
+      if (Math.random() < 0.18) oc.arcs.push({ born: now, a: Math.random() * Math.PI * 2 });
+      oc.arcs = oc.arcs.filter((arc) => now - arc.born < 140);
+      cubeKick();
+      return;
+    }
+    if (!fxCanvas || !lay || boardFx) return;
+    if (Math.random() < 0.16) {
+      const side = Math.floor(Math.random() * 4);
+      oc.arcs.push({ born: now, side, at: Math.random() });
+    }
+    oc.arcs = oc.arcs.filter((arc) => now - arc.born < 160);
+    const ctx = fxCanvas.getContext('2d');
+    ctx.setTransform(lay.dpr, 0, 0, lay.dpr, 0, 0);
+    ctx.clearRect(0, 0, lay.tw, lay.th);
+    const p = game.puzzle;
+    const [x0, y0] = cellPx(-RIM, -RIM);
+    const [x1, y1] = cellPx(p.w + RIM, p.h + RIM);
+    ctx.lineJoin = 'bevel';
+    oc.arcs.forEach((arc) => {
+      const life = 1 - (now - arc.born) / 160;
+      const len = lay.cell * (1.2 + Math.random());
+      const horiz = arc.side % 2 === 0;
+      const sx = horiz ? x0 + (x1 - x0) * arc.at : arc.side === 1 ? x1 : x0;
+      const sy = horiz ? (arc.side === 0 ? y0 : y1) : y0 + (y1 - y0) * arc.at;
+      ctx.beginPath();
+      for (let k = 0; k <= 5; k++) {
+        const t = (k / 5 - 0.5) * len;
+        const j = (Math.random() - 0.5) * lay.cell * 0.5;
+        const x = horiz ? sx + t : sx + j;
+        const y = horiz ? sy + j : sy + t;
+        if (k) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
+      }
+      ctx.globalAlpha = life;
+      ctx.strokeStyle = Math.random() < 0.5 ? '#ffffff' : '#8ff4ff';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // The core ran dry: the board is lost.
+  function lose() {
+    if (game.done) return;
+    game.done = true;
+    game.lost = true;
+    clearRun();
+    clearHint();
+    setHover(-1);
+    updateHud();
+    drawPower();
+    board.classList.add('drained');
+    Sound.powerDown();
+    buzz([240]);
+    say('The core drained! Clear traces faster to keep it powered.', true);
+    const epoch = game.epoch;
+    setTimeout(() => {
+      if (epoch !== game.epoch || screen !== 'play') return;
+      showLose();
+    }, reduceMotion ? 100 : 900);
+  }
+
+  function showLose() {
+    const isLevel = game.mode === 'level';
+    const n = game.puzzle.arrows.length;
+    const cleared = game.gone.filter(Boolean).length;
+    $('winSet').textContent = isLevel ? Core.setOf(game.level).name : isCube() ? 'Your cube' : 'Your board';
+    $('winTitle').textContent = 'Core drained!';
+    $('winStars').hidden = true;
+    $('winStats').textContent = cleared + ' of ' + n + ' traces cleared';
+    $('winNote').textContent = 'Overclocked: the core drains every second. Each trace you clear tops it up, and each short drains a chunk.';
+    $('winCode').hidden = true;
+    $('replayBtn').hidden = true;
+    $('nextBtn').querySelector('.big-label').textContent = 'Try again';
+    $('win').hidden = false;
+    $('nextBtn').focus({ preventScroll: true });
   }
 
   function updateHud() {
@@ -837,6 +1064,7 @@
   function buildBoard() {
     if (isCube()) return cubeBuild();
     board.innerHTML = '';
+    board.classList.remove('cube-mode');
     const p = game.puzzle;
     stage = document.createElement('div');
     stage.className = 'stage';
@@ -1261,6 +1489,10 @@
   function tap(i) {
     if (!game.puzzle || game.done || i < 0 || game.gone[i] || game.busy.has(i)) return;
     const result = Core.probe(game.puzzle, i, game.gone);
+    if (game.oc) {
+      if (result.free) ocRefill();
+      else ocShort();
+    }
     if (isCube()) {
       if (result.free) cubeLeave(i);
       else cubeShort(i, result);
@@ -1665,10 +1897,12 @@
     const n = game.puzzle.arrows.length;
     $('winSet').textContent = isLevel ? Core.setOf(game.level).name : isCube() ? 'Your cube' : 'Your board';
     $('winTitle').textContent = isLevel ? 'Level ' + game.level + ' cleared!' : isCube() ? 'Cube cleared!' : 'Board cleared!';
+    $('winStars').hidden = false;
+    $('replayBtn').hidden = false;
     $('winStars').querySelectorAll('i').forEach((s, i) => s.classList.toggle('on', i < stars));
     $('winStars').setAttribute('aria-label', stars + (stars === 1 ? ' star' : ' stars'));
     const b = game.bumps;
-    $('winStats').textContent = (b === 0 ? 'No shorts!' : b + (b === 1 ? ' short' : ' shorts')) + (game.helped ? ' · hint used' : '');
+    $('winStats').textContent = (b === 0 ? 'No shorts!' : b + (b === 1 ? ' short' : ' shorts')) + (game.helped ? ' · hint used' : '') + (game.oc ? ' · ' + Math.max(0, Math.ceil(game.oc.S)) + 's of power left' : '');
     let note;
     if (stars === 3) note = n + ' traces, every one routed clean.';
     else if (game.helped && b <= Core.bumpAllowance(n)) note = '3 stars: no shorts and no hints.';
@@ -1810,6 +2044,15 @@
     });
     $('soundBtn').addEventListener('click', () => setSound(!saved.sound));
     $('soundToggle').addEventListener('change', (e) => setSound(e.target.checked));
+    // An overclocked run saves its power when the page goes away, so a reload
+    // picks up where the clock was, not where it was at the last tap.
+    const ocSave = () => game.oc && screen === 'play' && saveRun();
+    window.addEventListener('pagehide', ocSave);
+    document.addEventListener('visibilitychange', () => document.hidden && ocSave());
+    $('ocToggle').addEventListener('change', (e) => {
+      saved.custom.overclock = e.target.checked;
+      save();
+    });
     $('vibrateToggle').addEventListener('change', (e) => setVibrate(e.target.checked));
     $('vibrateToggle').closest('label').hidden = !canVibrate;
     $('vibrateToggle').checked = saved.vibrate !== false;
@@ -1819,7 +2062,8 @@
 
     $('nextBtn').addEventListener('click', () => {
       $('win').hidden = true;
-      if (game.mode === 'level') startLevel(game.level + 1);
+      if (game.lost) restart();
+      else if (game.mode === 'level') startLevel(game.level + 1);
       else startCustom(Object.assign({}, game.custom, { seed: 1000 + Math.floor(Math.random() * 9000) }));
     });
     $('replayBtn').addEventListener('click', restart);
@@ -1986,6 +2230,7 @@
 
   function cubeBuild() {
     board.innerHTML = '';
+    board.classList.add('cube-mode');
     stage = null;
     zoomTools = null;
     const p = game.puzzle;
@@ -2379,6 +2624,7 @@
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     drawFinaleFront(now);
+    if (game.oc && !game.done) drawCubeCrackle(now);
     cubeDrawMeter(now);
   }
 
@@ -2791,6 +3037,32 @@
     }
   }
 
+  // Overclocked cubes crackle: short arcs flicker off the cube's edge.
+  function drawCubeCrackle(now) {
+    const ctx = cube.ctx;
+    const size = game.puzzle.n * cube.s;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineJoin = 'bevel';
+    game.oc.arcs.forEach((arc) => {
+      const life = 1 - (now - arc.born) / 140;
+      ctx.beginPath();
+      for (let j = 0; j <= 5; j++) {
+        const rr = size * (0.62 + j * 0.06);
+        const aa = arc.a + (Math.random() - 0.5) * 0.3;
+        const x = cube.cx + Math.cos(aa) * rr;
+        const y = cube.cy + Math.sin(aa) * rr;
+        if (j) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
+      }
+      ctx.globalAlpha = Math.max(0, life);
+      ctx.strokeStyle = Math.random() < 0.5 ? '#ffffff' : '#8ff4ff';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
   // The streaks pouring in, and the glow swelling behind the cube.
   function drawFinaleBack(now) {
     const f = cube.finale;
@@ -3117,6 +3389,10 @@
   window.__circuitJamTest = {
     cubeZoom: () => cube.zoom,
     facesCleared: () => cube.cleared.size,
+    power: () => (game.oc ? { S: game.oc.S, max: game.oc.max, refill: game.oc.refill, cost: game.oc.cost } : null),
+    setPower(S) {
+      if (game.oc) game.oc.S = S;
+    },
     finaleTime: () => {
       const f = cube.finale || boardFx;
       return f && game.done ? performance.now() - f.start : -1;
@@ -3163,6 +3439,8 @@
       hintsLeft: game.hintsLeft,
       helped: game.helped,
       hinted: game.hinted,
+      overclock: !!game.overclock,
+      ocS: game.oc ? game.oc.S : null,
     };
   }
 
@@ -3193,7 +3471,10 @@
     $('setName').textContent = g.mode === 'level' ? Core.setOf(g.level).name : g.custom.shape === 'cube' ? 'Your cube' : 'Your board';
     $('levelTitle').textContent = g.mode === 'level' ? 'Level ' + g.level : Core.codeOf(g.custom);
     game.puzzle = g.puzzle;
+    game.overclock = !!g.overclock;
     resetState();
+    if (game.oc && g.ocS != null) game.oc.S = Math.max(1, g.ocS);
+    drawPower();
     (g.gone || []).forEach((i) => (game.gone[i] = true));
     Object.assign(game, {
       absorbed: (g.gone || []).length,

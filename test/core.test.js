@@ -149,7 +149,7 @@ test('denser settings fill more of the board', () => {
 });
 
 test('share codes round-trip and reject bad input', () => {
-  const c = { shape: 'flat', w: 8, h: 10, density: 1, length: 2, bend: 1, seed: 4821 };
+  const c = { shape: 'flat', w: 8, h: 10, density: 1, length: 2, bend: 1, seed: 4821, overclock: false };
   const code = Core.codeOf(c);
   assert.strictEqual(code, '0810121-4821');
   assert.deepStrictEqual(Core.parseCode(code), c);
@@ -162,8 +162,15 @@ test('share codes round-trip and reject bad input', () => {
   assert.strictEqual(Core.parseCode('hello'), null);
   // Same code, same board.
   assert.deepStrictEqual(Core.generate(Core.customSpec(c)), Core.generate(Core.customSpec(Core.parseCode(code))));
+  // X on the end means Overclock; the board is the same either way.
+  const oc = Core.parseCode('0810121-4821X');
+  assert.strictEqual(oc.overclock, true);
+  assert.strictEqual(Core.codeOf(oc), '0810121-4821X');
+  assert.strictEqual(Core.parseCode(code).overclock, false);
+  assert.deepStrictEqual(Core.generate(Core.customSpec(oc)).arrows, Core.generate(Core.customSpec(c)).arrows);
+  assert.strictEqual(Core.parseCode('c06211-77x').overclock, true);
   // Cube codes start with C.
-  const cube = { shape: 'cube', n: 6, density: 2, length: 1, bend: 1, seed: 77 };
+  const cube = { shape: 'cube', n: 6, density: 2, length: 1, bend: 1, seed: 77, overclock: false };
   assert.strictEqual(Core.codeOf(cube), 'C06211-77');
   assert.deepStrictEqual(Core.parseCode('c06211-77'), cube);
   assert.strictEqual(Core.parseCode('C21211-77'), null); // face too big
@@ -281,4 +288,23 @@ test('the biggest flat boards build and clear', () => {
   const lv = Core.generate(Core.customSpec({ shape: 'flat', w: 30, h: 40, density: 2, length: 1, bend: 1, seed: 3 }));
   checkBoard(lv, '30x40');
   assert.ok(lv.fill > 0.8, 'packed big board is mostly full: ' + lv.fill.toFixed(2));
+});
+
+test('overclocked levels start at 14 and come a few per set', () => {
+  const oc = [];
+  for (let n = 1; n <= 70; n++) if (Core.levelSpec(n).overclock) oc.push(n);
+  assert.strictEqual(oc[0], 14);
+  assert.ok(oc.every((n) => n > 10), 'none in the first set');
+  for (let s = 1; s < 7; s++) {
+    const inSet = oc.filter((n) => n > s * 10 && n <= s * 10 + 10).length;
+    assert.ok(inSet >= 2 && inSet <= 3, 'set ' + s + ' has ' + inSet);
+  }
+});
+
+test('overclock power: harder boards refill more per trace', () => {
+  const easy = Core.overclockFor({ arrows: new Array(10), rating: 2 });
+  const hard = Core.overclockFor({ arrows: new Array(40), rating: 12 });
+  assert.ok(hard.refill > easy.refill);
+  assert.ok(hard.max >= easy.max);
+  assert.ok(easy.cost >= 3 && hard.cost > hard.refill);
 });

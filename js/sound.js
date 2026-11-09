@@ -267,6 +267,18 @@
       });
       tone(2093, T + 0.35, 1.6, { gain: 0.035, to: 2150 });
     },
+    // Overclock, power running low: a short warning beep.
+    lowPower() {
+      tone(880, 0, 0.07, { type: 'square', gain: 0.05 });
+      tone(660, 0.09, 0.07, { type: 'square', gain: 0.04 });
+    },
+    // The core running dry: everything winds down.
+    powerDown() {
+      tone(440, 0, 1.1, { type: 'sawtooth', to: 30, gain: 0.12 });
+      tone(220, 0, 1.2, { type: 'square', to: 20, gain: 0.05 });
+      noise(0, 0.9, { type: 'lowpass', freq: 4000, to: 120, q: 1, gain: 0.12 });
+      tone(90, 0.02, 0.5, { to: 35, gain: 0.3 });
+    },
     // The core filling up on the last trace: the landing, then a surge
     // that climbs and bursts.
     overload() {

@@ -860,7 +860,7 @@
 
     const W_CONVOY = 4;
     const W_PAIR = 3;
-    const W_FREE = 6 * hard;
+    const W_FREE = 10 * hard;
     const W_LANE = (0.9 * hard) / Math.max(1, live);
 
     function convoyOf(j) {
@@ -973,13 +973,13 @@
    * Everything is seeded and nothing depends on time, so the same spec gives
    * the same board on every device.
    */
-  const CANDIDATES = 4;
+  const CANDIDATES = 6;
 
   function generate(spec) {
     const seed = spec.seed == null ? 'unfold' : spec.seed;
     const g = geometryOf(spec);
-    // Big boards build fewer candidates so they stay quick.
-    const candidates = g.count > 400 ? 2 : CANDIDATES;
+    // Only the very biggest boards build fewer candidates.
+    const candidates = g.count > 1500 ? 3 : CANDIDATES;
     const found = [];
     for (let attempt = 0; attempt < candidates; attempt++) {
       const rng = makeRng(hashString(seed + ':' + attempt));
@@ -1011,46 +1011,47 @@
 
   /*
    * Ten levels per set. Each row is [width, height, density, shortest arrow,
-   * longest arrow, bend, pick]. Sets get bigger, denser, longer, and
-   * bendier, and within a set the pick rises with a couple of easier
-   * breathers so it is not a steady grind. Straight arrows only until level
-   * 6, where bends arrive.
+   * longest arrow, bend, pick]. Sets get bigger (from 4 by 5 up to 18 by 24,
+   * zoom taking over where cells get small), denser, longer, and bendier,
+   * and within a set the pick rises with a couple of easier breathers so it
+   * is not a steady grind. Straight arrows only until level 6, where bends
+   * arrive.
    */
   const SETS = [
     { name: 'Breadboard', levels: [
-      null, [4, 4, 0.75, 2, 3, 0, 0.3], [4, 5, 0.8, 2, 3, 0, 0.5], [5, 5, 0.8, 2, 3, 0, 0.5], [5, 6, 0.8, 2, 4, 0, 0.7],
-      [5, 5, 0.8, 3, 4, 0.35, 0.3], [5, 6, 0.85, 2, 4, 0.3, 0.5], [6, 6, 0.8, 2, 4, 0.3, 0.4], [6, 7, 0.85, 2, 4, 0.3, 0.7], [6, 7, 0.85, 2, 5, 0.3, 0.8],
+      null, [4, 5, 0.8, 2, 3, 0, 0.4], [5, 5, 0.8, 2, 4, 0, 0.5], [5, 6, 0.85, 2, 4, 0, 0.6], [6, 6, 0.85, 2, 4, 0, 0.7],
+      [6, 7, 0.85, 3, 5, 0.35, 0.5], [6, 7, 0.88, 2, 5, 0.3, 0.6], [7, 7, 0.85, 2, 5, 0.3, 0.5], [7, 8, 0.88, 3, 5, 0.35, 0.8], [8, 9, 0.9, 3, 6, 0.35, 0.9],
     ] },
     { name: 'Relay', levels: [
-      [6, 7, 0.85, 2, 5, 0.35, 0.5], [6, 8, 0.85, 2, 5, 0.35, 0.6], [7, 8, 0.85, 2, 5, 0.35, 0.4], [7, 8, 0.88, 2, 5, 0.4, 0.8], [6, 7, 0.85, 2, 4, 0.3, 0.3],
-      [7, 9, 0.88, 2, 5, 0.4, 0.6], [7, 9, 0.9, 2, 6, 0.4, 0.7], [6, 8, 0.85, 2, 5, 0.35, 0.4], [7, 9, 0.9, 2, 6, 0.4, 0.8], [8, 9, 0.9, 2, 6, 0.4, 0.9],
+      [8, 9, 0.9, 3, 6, 0.4, 0.6], [8, 10, 0.9, 3, 6, 0.4, 0.7], [9, 10, 0.9, 3, 6, 0.4, 0.7], [8, 9, 0.88, 3, 5, 0.35, 0.5], [9, 11, 0.92, 3, 7, 0.45, 0.8],
+      [9, 11, 0.92, 3, 7, 0.45, 0.7], [10, 11, 0.92, 3, 7, 0.45, 0.8], [8, 10, 0.9, 3, 6, 0.4, 0.5], [10, 12, 0.93, 3, 7, 0.45, 0.9], [10, 13, 0.93, 3, 8, 0.45, 1],
     ] },
     { name: 'Capacitor', levels: [
-      [7, 9, 0.9, 3, 6, 0.45, 0.5], [8, 9, 0.9, 3, 6, 0.45, 0.6], [8, 10, 0.9, 3, 6, 0.45, 0.6], [7, 8, 0.88, 2, 5, 0.4, 0.4], [8, 10, 0.92, 3, 7, 0.45, 0.8],
-      [8, 10, 0.92, 3, 7, 0.5, 0.6], [8, 11, 0.92, 3, 7, 0.5, 0.7], [7, 9, 0.9, 3, 6, 0.45, 0.4], [8, 11, 0.93, 3, 7, 0.5, 0.8], [9, 11, 0.93, 3, 7, 0.5, 0.9],
+      [10, 12, 0.93, 3, 7, 0.45, 0.7], [10, 13, 0.93, 3, 8, 0.5, 0.8], [11, 13, 0.94, 3, 8, 0.5, 0.8], [10, 12, 0.92, 3, 7, 0.45, 0.6], [11, 14, 0.94, 3, 8, 0.5, 0.9],
+      [11, 14, 0.95, 3, 8, 0.5, 0.8], [12, 14, 0.95, 3, 9, 0.5, 0.9], [10, 12, 0.93, 3, 7, 0.45, 0.6], [12, 15, 0.95, 3, 9, 0.5, 1], [12, 16, 0.95, 4, 10, 0.55, 1],
     ] },
     { name: 'Transistor', levels: [
-      [8, 10, 0.93, 3, 7, 0.5, 0.6], [9, 11, 0.93, 3, 7, 0.5, 0.6], [9, 11, 0.94, 3, 8, 0.5, 0.7], [8, 10, 0.92, 3, 6, 0.45, 0.4], [9, 12, 0.94, 3, 8, 0.5, 0.8],
-      [9, 12, 0.95, 3, 8, 0.55, 0.6], [9, 12, 0.95, 3, 8, 0.55, 0.8], [8, 10, 0.93, 3, 7, 0.5, 0.4], [9, 12, 0.95, 3, 8, 0.55, 0.9], [10, 12, 0.95, 3, 8, 0.55, 0.9],
+      [12, 15, 0.95, 3, 9, 0.5, 0.8], [12, 16, 0.95, 4, 10, 0.55, 0.8], [13, 16, 0.96, 4, 10, 0.55, 0.9], [12, 14, 0.94, 3, 8, 0.5, 0.6], [13, 17, 0.96, 4, 10, 0.55, 0.9],
+      [13, 17, 0.96, 4, 11, 0.55, 0.9], [14, 17, 0.96, 4, 11, 0.6, 1], [12, 15, 0.95, 3, 9, 0.5, 0.6], [14, 18, 0.97, 4, 11, 0.6, 1], [14, 19, 0.97, 4, 12, 0.6, 1],
     ] },
     { name: 'Processor', levels: [
-      [9, 12, 0.95, 3, 8, 0.55, 0.6], [10, 12, 0.95, 3, 8, 0.55, 0.7], [10, 13, 0.96, 3, 9, 0.55, 0.7], [9, 11, 0.94, 3, 7, 0.5, 0.4], [10, 13, 0.96, 3, 9, 0.6, 0.8],
-      [10, 13, 0.96, 3, 9, 0.6, 0.7], [10, 14, 0.96, 3, 9, 0.6, 0.8], [9, 12, 0.95, 3, 8, 0.55, 0.5], [10, 14, 0.97, 3, 9, 0.6, 0.9], [10, 14, 0.97, 4, 10, 0.6, 0.9],
+      [13, 17, 0.96, 4, 10, 0.55, 0.8], [14, 18, 0.97, 4, 11, 0.6, 0.9], [14, 19, 0.97, 4, 12, 0.6, 0.9], [13, 16, 0.96, 4, 10, 0.55, 0.6], [15, 19, 0.97, 4, 12, 0.6, 1],
+      [15, 20, 0.97, 4, 12, 0.6, 0.9], [15, 20, 0.98, 4, 12, 0.65, 1], [13, 17, 0.96, 4, 10, 0.55, 0.6], [16, 20, 0.98, 4, 12, 0.65, 1], [16, 21, 0.98, 4, 13, 0.65, 1],
     ] },
     { name: 'Mainframe', levels: [
-      [10, 13, 0.97, 3, 9, 0.6, 0.7], [10, 14, 0.97, 3, 10, 0.6, 0.7], [11, 14, 0.97, 3, 10, 0.6, 0.8], [10, 12, 0.96, 3, 8, 0.55, 0.5], [11, 14, 0.97, 4, 10, 0.65, 0.8],
-      [11, 14, 0.98, 4, 10, 0.65, 0.8], [11, 15, 0.98, 4, 10, 0.65, 0.8], [10, 13, 0.96, 3, 9, 0.6, 0.5], [11, 15, 0.98, 4, 11, 0.65, 0.9], [11, 15, 0.98, 4, 11, 0.65, 1],
+      [15, 19, 0.97, 4, 12, 0.6, 0.9], [15, 20, 0.98, 4, 12, 0.65, 0.9], [16, 21, 0.98, 4, 13, 0.65, 1], [14, 18, 0.97, 4, 11, 0.6, 0.7], [16, 21, 0.98, 4, 13, 0.65, 1],
+      [16, 22, 0.98, 5, 13, 0.65, 1], [16, 22, 0.98, 5, 14, 0.7, 1], [15, 19, 0.97, 4, 12, 0.6, 0.7], [16, 22, 0.98, 5, 14, 0.7, 1], [17, 22, 0.98, 5, 14, 0.7, 1],
     ] },
     { name: 'Quantum', levels: [
-      [11, 14, 0.98, 4, 10, 0.65, 0.8], [11, 15, 0.98, 4, 11, 0.65, 0.8], [12, 15, 0.98, 4, 11, 0.65, 0.8], [11, 14, 0.97, 3, 9, 0.6, 0.5], [12, 15, 0.98, 4, 12, 0.7, 0.9],
-      [12, 16, 0.98, 4, 12, 0.7, 0.8], [12, 16, 0.98, 4, 12, 0.7, 0.9], [11, 14, 0.97, 4, 10, 0.65, 0.5], [12, 16, 0.98, 4, 12, 0.7, 1], [12, 16, 0.99, 4, 12, 0.7, 1],
+      [16, 21, 0.98, 5, 13, 0.65, 1], [16, 22, 0.98, 5, 14, 0.7, 1], [17, 22, 0.98, 5, 14, 0.7, 1], [15, 20, 0.97, 4, 12, 0.65, 0.8], [17, 23, 0.98, 5, 14, 0.7, 1],
+      [17, 23, 0.99, 5, 15, 0.7, 1], [18, 23, 0.99, 5, 15, 0.7, 1], [16, 21, 0.98, 5, 13, 0.65, 0.8], [18, 24, 0.99, 5, 15, 0.7, 1], [18, 24, 0.99, 5, 16, 0.7, 1],
     ] },
   ];
 
   // After the last set the levels keep coming, drawn from these sizes.
   const ENDLESS_SIZES = [
-    [10, 13, 0.96, 3, 9, 0.6], [11, 14, 0.97, 4, 10, 0.65], [12, 15, 0.98, 4, 11, 0.65], [12, 16, 0.98, 4, 12, 0.7],
-    [9, 12, 0.95, 3, 8, 0.55], [11, 15, 0.98, 4, 11, 0.65], [10, 14, 0.97, 3, 10, 0.6], [12, 14, 0.97, 4, 10, 0.7],
+    [16, 21, 0.98, 5, 13, 0.65], [17, 22, 0.98, 5, 14, 0.7], [18, 24, 0.99, 5, 15, 0.7], [19, 25, 0.99, 5, 16, 0.7],
+    [16, 20, 0.97, 4, 12, 0.65], [20, 26, 0.99, 5, 16, 0.7], [18, 23, 0.98, 5, 15, 0.7], [17, 21, 0.98, 5, 14, 0.7],
   ];
   const ENDLESS_NAMES = ['Fusion', 'Plasma', 'Photon', 'Neutrino', 'Tachyon', 'Singularity'];
 
@@ -1079,17 +1080,21 @@
     const set = setOf(level);
     const slot = (level - 1) % 10;
     let row;
+    let overclock;
     if (set.index < SETS.length) {
       row = SETS[set.index].levels[slot];
+      overclock = isOverclocked(set.index, slot);
     } else {
       const rng = makeRng(hashString('endless:' + level));
       const size = ENDLESS_SIZES[rng.int(ENDLESS_SIZES.length)];
       row = size.concat([0.5 + 0.5 * rng()]);
+      overclock = rng() < 0.3;
     }
-    if (!row) return { level, set: set.name, tutorial: true };
+    if (!row) return { level, set: set.name, tutorial: true, overclock: false };
     return {
       level,
       set: set.name,
+      overclock,
       w: row[0],
       h: row[1],
       density: row[2],
@@ -1101,6 +1106,31 @@
       cover: 0.4 + 1.6 * row[6],
       seed: 'level:' + level,
     };
+  }
+
+  /*
+   * Overclocked levels: from the second set on, the fourth and eighth level
+   * of each set, and from the fourth set on, the last one too. Level 14 is
+   * the first.
+   */
+  function isOverclocked(setIndex, slot) {
+    if (setIndex < 1) return false;
+    return slot === 3 || slot === 7 || (setIndex >= 3 && slot === 9);
+  }
+
+  /*
+   * An overclocked board's power, in seconds. The core starts full at
+   * `max` and drains one second per second; each trace cleared adds
+   * `refill` (up to `max`), and each short takes `cost`. `refill` is about
+   * how long finding a free trace should take on this board: longer on
+   * boards with a higher rating (fewer free traces among more).
+   */
+  function overclockFor(puzzle) {
+    const n = puzzle.arrows.length;
+    const rating = Math.min(40, puzzle.rating || 3);
+    const refill = 0.8 + 0.16 * rating;
+    const max = Math.max(12, Math.min(30, 10 + n * 0.15));
+    return { max, refill, cost: Math.max(3, refill * 1.5) };
   }
 
   function cloneArrows(arrows) {
@@ -1143,7 +1173,9 @@
       pick: 0.6,
       hard: 0.75,
       cover: 1.4,
-      seed: 'custom:' + codeOf(Object.assign({}, c, { seed: 0 })) + ':' + c.seed,
+      overclock: !!c.overclock,
+      // The same board with or without Overclock.
+      seed: 'custom:' + codeOf(Object.assign({}, c, { seed: 0, overclock: false })) + ':' + c.seed,
     });
   }
 
@@ -1160,10 +1192,11 @@
    * Share codes. A flat board: two digits of width, two of height, then
    * density, length, and bend (0-2 each), a dash, and the seed, like
    * 0810121-4821. A cube: C, two digits of face size, the same three
-   * settings, and the seed, like C06121-4821.
+   * settings, and the seed, like C06121-4821. An X on the end means
+   * Overclock is on: 0810121-4821X.
    */
   function codeOf(c) {
-    const tail = '' + c.density + c.length + c.bend + '-' + c.seed;
+    const tail = '' + c.density + c.length + c.bend + '-' + c.seed + (c.overclock ? 'X' : '');
     if (c.shape === 'cube') return 'C' + String(c.n).padStart(2, '0') + tail;
     return String(c.w).padStart(2, '0') + String(c.h).padStart(2, '0') + tail;
   }
@@ -1171,10 +1204,10 @@
   function parseCode(text) {
     const t = String(text || '').trim().toUpperCase();
     let c = null;
-    let m = /^C\s*(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})$/.exec(t);
-    if (m) c = { shape: 'cube', n: +m[1], density: +m[2], length: +m[3], bend: +m[4], seed: +m[5] };
-    m = m ? null : /^(\d{2})(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})$/.exec(t);
-    if (m) c = { shape: 'flat', w: +m[1], h: +m[2], density: +m[3], length: +m[4], bend: +m[5], seed: +m[6] };
+    let m = /^C\s*(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})(X?)$/.exec(t);
+    if (m) c = { shape: 'cube', n: +m[1], density: +m[2], length: +m[3], bend: +m[4], seed: +m[5], overclock: !!m[6] };
+    m = m ? null : /^(\d{2})(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})(X?)$/.exec(t);
+    if (m) c = { shape: 'flat', w: +m[1], h: +m[2], density: +m[3], length: +m[4], bend: +m[5], seed: +m[6], overclock: !!m[7] };
     return c && validCustom(c) ? c : null;
   }
 
@@ -1236,6 +1269,8 @@
     parseCode,
     bumpAllowance,
     starsFor,
+    isOverclocked,
+    overclockFor,
     HINTS,
     PALETTE_SIZE,
     SET_COUNT: SETS.length,
