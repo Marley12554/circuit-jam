@@ -659,11 +659,15 @@ input:focus-visible {
 
 .preset {
   --cut: 9px;
+  --accent: var(--go);
+  --on-accent: var(--on-go);
+  position: relative;
   display: grid;
   justify-items: center;
   align-content: start;
   gap: 6px;
-  padding: 10px 6px 8px;
+  /* Room at the top for the SELECTED tag, so nothing shifts when it shows. */
+  padding: 20px 6px 8px;
   border: 0;
   background: var(--panel-solid);
   box-shadow: inset 0 0 0 1.5px var(--edge-soft);
@@ -677,8 +681,25 @@ input:focus-visible {
   transform: scale(0.96);
 }
 
+/* Selected, the same way on every card: a thick outline in the card's
+   accent and a SELECTED tag on its top edge. */
 .preset[aria-pressed='true'] {
-  box-shadow: inset 0 0 0 2px var(--go), inset 0 0 18px rgba(47, 230, 180, 0.25);
+  box-shadow: inset 0 0 0 3px var(--accent), inset 0 0 18px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.preset[aria-pressed='true']::after {
+  content: '\2713  Selected';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 6px 3px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 10px/1.2 var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: pre;
 }
 
 .preset-board {
@@ -686,18 +707,18 @@ input:focus-visible {
   height: 44px;
 }
 
-/* Impossible: a full-width card under the others. At rest it's calm
-   (still stripes, a dim red edge); selected it turns solid hot red with
-   white text and a SELECTED tag, so the choice is obvious at a glance.
+/* Impossible: a full-width card under the others, in red. It's calm at
+   rest (still stripes, a dim red edge) and selected like every other card.
    Only the bolt moves: a steady pulse. */
 .preset.impossible {
-  position: relative;
+  --accent: #ff5c78;
+  --on-accent: #ffffff;
   grid-column: 1 / -1;
   grid-template-columns: auto minmax(0, 1fr);
   justify-items: start;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 20px 14px 10px;
   background:
     repeating-linear-gradient(115deg, transparent 0 10px, rgba(255, 59, 92, 0.08) 10px 12px),
     color-mix(in srgb, #ff3b5c 7%, var(--panel-solid));
@@ -705,25 +726,9 @@ input:focus-visible {
 }
 
 .preset.impossible[aria-pressed='true'] {
-  background:
-    repeating-linear-gradient(115deg, transparent 0 10px, rgba(255, 255, 255, 0.12) 10px 12px),
-    linear-gradient(135deg, #ff4d6a, #b8143c);
-  box-shadow: inset 0 0 0 2px #ffffff, inset 0 0 18px rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 0 0 3px var(--accent), inset 0 0 18px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-.preset.impossible[aria-pressed='true']::after {
-  content: '\2713  Selected';
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  padding: 3px 8px;
-  background: #ffffff;
-  color: #b8143c;
-  font: 700 11px/1.2 var(--font-display);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  white-space: pre;
-}
 
 .impossible-art {
   width: 38px;
@@ -742,10 +747,6 @@ input:focus-visible {
   animation: bolt-pulse 1.1s ease-in-out infinite alternate;
 }
 
-.preset.impossible[aria-pressed='true'] .impossible-art .ring {
-  fill: #6e0b24;
-  stroke: #ffffff;
-}
 
 @keyframes bolt-pulse {
   from { opacity: 0.6; }
@@ -768,13 +769,6 @@ input:focus-visible {
   font-size: 12.5px;
 }
 
-.preset.impossible[aria-pressed='true'] .preset-name {
-  color: #ffffff;
-}
-
-.preset.impossible[aria-pressed='true'] .preset-icons {
-  color: rgba(255, 255, 255, 0.88);
-}
 
 .preset-board .mini-dot {
   fill: var(--bg);
