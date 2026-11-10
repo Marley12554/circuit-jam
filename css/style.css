@@ -682,7 +682,7 @@ input:focus-visible {
 }
 
 /* Selected, the same way on every card: a thick outline in the card's
-   accent and a SELECTED tag on its top edge. */
+   accent and a SELECTED tag in its top-right corner (the square one). */
 .preset[aria-pressed='true'] {
   box-shadow: inset 0 0 0 3px var(--accent), inset 0 0 18px color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -691,8 +691,7 @@ input:focus-visible {
   content: '\2713  Selected';
   position: absolute;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 0;
   padding: 2px 6px 3px;
   background: var(--accent);
   color: var(--on-accent);
