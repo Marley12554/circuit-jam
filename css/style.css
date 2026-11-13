@@ -1691,6 +1691,29 @@ input:focus-visible {
   margin-top: 8px;
 }
 
+/* The share button mirrors the close button, in the other corner. */
+.win-share {
+  right: auto;
+  left: 12px;
+  color: var(--go);
+}
+
+.win-share svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+
+.share-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .win-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

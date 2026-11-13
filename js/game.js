@@ -48,6 +48,7 @@
     soundOff: '<svg viewBox="0 0 24 24"><path d="M11 5 6.5 9H3.5v6h3l4.5 4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></svg>',
     restart: '<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 3.5v5h5"/></svg>',
     hint: '<svg viewBox="0 0 24 24"><path d="M9 18h6M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-3.8 11.8c.5.4.8 1 .8 1.6V16h6v-.1c0-.6.3-1.2.8-1.6A6.5 6.5 0 0 0 12 2.5z"/></svg>',
+    share: '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="19" r="2.8"/><path d="M8.5 10.7 15.5 6.3M8.5 13.3l7 4.4"/></svg>',
     results: '<svg viewBox="0 0 24 24"><path d="M7 3.5h10v6a5 5 0 0 1-10 0z"/><path d="M7 5.5H3.5v1.5a3.5 3.5 0 0 0 3.6 3.5M17 5.5h3.5v1.5a3.5 3.5 0 0 1-3.6 3.5"/><path d="M12 14.5v3.5M8 21h8M9.5 18h5v3h-5z"/></svg>',
   };
 
@@ -983,6 +984,8 @@
     $('winTitle').textContent = 'Core drained!';
     $('winStars').hidden = true;
     $('winStats').textContent = cleared + ' of ' + n + ' traces cleared';
+    game.result = { won: false, cleared, total: n };
+    $('shareNote').hidden = true;
     $('winNote').textContent = 'Overclocked: the core drains every second. Each trace you clear tops it up, and each short drains a chunk.';
     $('winCode').hidden = true;
     $('replayBtn').hidden = true;
@@ -2093,6 +2096,8 @@
     $('winStars').setAttribute('aria-label', stars + (stars === 1 ? ' star' : ' stars'));
     const b = game.bumps;
     $('winStats').textContent = (b === 0 ? 'No shorts!' : b + (b === 1 ? ' short' : ' shorts')) + (game.helped ? ' · hint used' : '') + (game.oc ? ' · ' + Math.max(0, Math.ceil(game.oc.S)) + 's of power left' : '');
+    game.result = { won: true, stars, shorts: b, helped: game.helped, power: game.oc ? Math.max(0, Math.ceil(game.oc.S)) : null };
+    $('shareNote').hidden = true;
     let note;
     if (stars === 3) note = n + ' traces, every one routed clean.';
     else if (game.helped && b <= Core.bumpAllowance(n)) note = '3 stars: no shorts and no hints.';
@@ -3897,11 +3902,89 @@
     });
   }
 
+  // ---------- Sharing ----------
+
+  // Where shared links point: this page when it's on the open web, or the
+  // public site when the game runs somewhere private (like a claude.ai
+  // artifact) or from disk.
+  const PUBLIC_URL = 'https://marley12554.github.io/circuit-jam/';
+
+  function shareBase() {
+    const here = location.protocol.startsWith('http') && !/claude\.ai|claudeusercontent|anthropic/.test(location.host);
+    return here ? location.origin + location.pathname : PUBLIC_URL;
+  }
+
+  // What the board was, in words, and a link that opens the same one.
+  function shareWhat() {
+    if (game.mode === 'level') return { name: 'Level ' + game.level, link: shareBase() + '?level=' + game.level };
+    const c = game.custom;
+    const spec = Core.customSpec(c);
+    const name = spec.hard === 1 ? 'an Impossible ' + (c.shape === 'cube' ? 'cube' : 'board') : c.shape === 'cube' ? 'a ' + c.n + '×' + c.n + '×' + c.n + ' cube' : 'a ' + c.w + '×' + c.h + ' board';
+    return { name: name + (c.overclock ? ' (overclocked)' : ''), link: shareBase() + '?code=' + encodeURIComponent(Core.codeOf(c)) };
+  }
+
+  function shareText() {
+    const r = game.result;
+    const what = shareWhat();
+    const into = game.mode === 'level' ? what.name : what.name.replace(/^an? /, 'my ');
+    if (!r.won) return { text: 'The core drained on me ' + r.cleared + ' of ' + r.total + ' traces into ' + into + ' in Circuit Jam. Think you can clear it?', link: what.link };
+    const stars = '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars);
+    const shorts = r.shorts === 0 ? 'no shorts' : r.shorts + (r.shorts === 1 ? ' short' : ' shorts');
+    const power = r.power != null ? ' and ' + r.power + 's of power left' : '';
+    return { text: 'I cleared ' + what.name + ' in Circuit Jam ' + stars + ' with ' + shorts + power + '. Can you beat that?', link: what.link };
+  }
+
+  function shareNote(text) {
+    const note = $('shareNote');
+    note.textContent = text;
+    note.hidden = false;
+  }
+
+  // The system share sheet where there is one (phones, Safari, Edge);
+  // otherwise the message and link are copied to paste anywhere.
+  async function shareResult() {
+    if (!game.result) return;
+    const { text, link } = shareText();
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Circuit Jam', text, url: link });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // closed the sheet
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text + ' ' + link);
+      shareNote('Copied! Paste it anywhere to send it.');
+    } catch (e) {
+      shareNote(text + ' ' + link);
+    }
+  }
+
+  // A shared link: ?level=16 opens that level, ?code=... builds that board.
+  function openSharedLink() {
+    const q = new URLSearchParams(location.search);
+    const level = parseInt(q.get('level'), 10);
+    const spec = q.get('code') ? Core.parseCode(q.get('code')) : null;
+    if (!(level >= 1 && level <= 100000) && !spec) return false;
+    try {
+      history.replaceState(null, '', location.pathname); // a reload goes home
+    } catch (e) {
+      /* fine either way */
+    }
+    if (spec) startCustom(spec);
+    else startLevel(level);
+    return true;
+  }
+
   function start() {
     drawWires();
     wire();
     setSound(saved.sound);
     show('home');
+    $('winShare').innerHTML = ICONS.share;
+    $('winShare').addEventListener('click', shareResult);
+    openSharedLink();
     $('recordToggle').addEventListener('change', (e) => {
       saved.record = e.target.checked;
       save();

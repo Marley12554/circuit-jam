@@ -638,6 +638,33 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.context().close();
   }
 
+  // Sharing: the system share sheet gets a "can you beat that?" message
+  // and a link; the link opens the same level or the same board.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+    const p = await ctx.newPage();
+    p.on('pageerror', (e) => errors.push(String(e)));
+    await p.addInitScript(() => {
+      localStorage.getItem('circuit-jam-v1') || localStorage.setItem('circuit-jam-v1', JSON.stringify({ sound: false, stars: { 1: 3 } }));
+      navigator.share = async (data) => { window.__shared = data; };
+    });
+    await p.goto(url);
+    await p.click('#playBtn');
+    await p.waitForSelector('.arrow');
+    await clearAll(p);
+    await p.click('#winShare');
+    const shared = await p.evaluate(() => window.__shared);
+    check(shared && /Level 2/.test(shared.text) && /Can you beat that\?/.test(shared.text) && /\?level=2$/.test(shared.url), 'Share opens the share sheet with the result and a link: ' + (shared && shared.text + ' ' + shared.url));
+    await p.goto(url.replace(/index\.html.*$/, 'index.html') + '?level=5');
+    await p.waitForFunction(() => document.getElementById('levelTitle').textContent.replace(/\s/g, ' ') === 'Level 5', null, { timeout: 4000 }).catch(() => {});
+    const lt = await p.textContent('#levelTitle');
+    check(lt.replace(/\s/g, ' ') === 'Level 5', 'a shared level link opens that level');
+    await p.goto(url.replace(/index\.html.*$/, 'index.html') + '?code=0810121-4821X');
+    await p.waitForSelector('.arrow');
+    check((await p.textContent('#levelTitle')) === '0810121-4821X' && !(await p.isHidden('#power')), 'a shared board link builds that board, overclock and all');
+    await ctx.close();
+  }
+
   // Keyboard: arrow keys move a box, Enter taps.
   {
     const p = await open({ sound: false });
