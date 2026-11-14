@@ -654,7 +654,13 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await clearAll(p);
     await p.click('#winShare');
     const shared = await p.evaluate(() => window.__shared);
+    // (Linux here: message and link as separate fields, as on a phone.)
     check(shared && /Level 2/.test(shared.text) && /Can you beat that\?/.test(shared.text) && /\?level=2$/.test(shared.url), 'Share opens the share sheet with the result and a link: ' + (shared && shared.text + ' ' + shared.url));
+    // On a Mac the link rides inside the text.
+    await p.evaluate(() => Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' }));
+    await p.click('#winShare');
+    const mac = await p.evaluate(() => window.__shared);
+    check(!mac.url && /Can you beat that\? http\S+\?level=2$/.test(mac.text), 'on a Mac the link goes inside the message: ' + mac.text);
     await p.goto(url.replace(/index\.html.*$/, 'index.html') + '?level=5');
     await p.waitForFunction(() => document.getElementById('levelTitle').textContent.replace(/\s/g, ' ') === 'Level 5', null, { timeout: 4000 }).catch(() => {});
     const lt = await p.textContent('#levelTitle');

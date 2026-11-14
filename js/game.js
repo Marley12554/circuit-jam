@@ -3471,8 +3471,12 @@
           const here = occ[g.key([f, u, v])];
           if (here !== -1) {
             if (isFree(here, occ)) return here;
-            // A slip onto a blocked trace at the border of a free one.
-            const size = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]);
+            // A slip onto a blocked trace at the border of a free one. Judged
+            // by how much nearer the tap is to the neighbor's center than to
+            // its own cell's, which holds however steeply the face is seen
+            // (a cell's width on screen does not).
+            const own = project(facePoint(f, u + 0.5, v + 0.5));
+            const fromOwn = Math.hypot(own[0] - x, own[1] - y);
             for (let dv = -1; dv <= 1; dv++) {
               for (let du = -1; du <= 1; du++) {
                 const uu = u + du;
@@ -3481,8 +3485,9 @@
                 const j = occ[g.key([f, uu, vv])];
                 if (j === -1 || j === here || !isFree(j, occ)) continue;
                 const c = project(facePoint(f, uu + 0.5, vv + 0.5));
-                const reach = (du && dv ? Math.SQRT2 : 1) - (0.5 - SLIP);
-                if (Math.hypot(c[0] - x, c[1] - y) < reach * size) return j;
+                // Within SLIP of the shared border: no more than
+                // (0.5 + SLIP) / (0.5 - SLIP) times as far from its center.
+                if (!(du && dv) && Math.hypot(c[0] - x, c[1] - y) < fromOwn * ((0.5 + SLIP) / (0.5 - SLIP))) return j;
               }
             }
             return here;
@@ -3947,7 +3952,11 @@
     const { text, link } = shareText();
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Circuit Jam', text, url: link });
+        // macOS share targets (Messages among them) keep only the link when
+        // given both, so on a Mac the link goes inside the text. iPhones and
+        // iPads (which also say "Mac" but have touch) keep both fine.
+        const mac = /Mac/.test(navigator.platform || navigator.userAgent) && !(navigator.maxTouchPoints > 1);
+        await navigator.share(mac ? { title: 'Circuit Jam', text: text + ' ' + link } : { title: 'Circuit Jam', text, url: link });
         return;
       } catch (e) {
         if (e && e.name === 'AbortError') return; // closed the sheet
