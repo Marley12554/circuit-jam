@@ -9,6 +9,11 @@
   let ctx = null;
   let master = null;
   let hum = null; // the dying-core hum, built once and kept
+  // When charge-ups and landings overlap (a cluster released at once),
+  // each new one plays quieter, and past a few they're left out, so a
+  // burst sounds like a bigger surge instead of a choir of chirps.
+  let chargeEnds = [];
+  let zapTimes = [];
   let enabled = true;
 
   function audio() {
@@ -111,10 +116,15 @@
     charge(seconds, progress) {
       const ac = audio();
       if (!ac) return;
-      const dur = Math.max(0.25, Math.min(2.5, seconds || 0.6));
+      // As long as the whole trip, so the sound lasts until the trace lands.
+      const dur = Math.max(0.25, Math.min(8, seconds || 0.6));
       const p = Math.max(0, Math.min(1, progress || 0));
       const t0 = ac.currentTime;
       const t1 = t0 + dur;
+      chargeEnds = chargeEnds.filter((e) => e > t0);
+      if (chargeEnds.length >= 4) return;
+      const k = 1 / (1 + 0.7 * chargeEnds.length);
+      chargeEnds.push(t1);
       const low = 55 * Math.pow(2, p);
       const high = low * 9;
       // The body: a sawtooth and a square, a hair apart, through a sweeping
@@ -136,9 +146,9 @@
       depth.connect(hum.gain);
       const env = ac.createGain();
       env.gain.setValueAtTime(0.0001, t0);
-      env.gain.exponentialRampToValueAtTime(0.13, t0 + 0.04);
-      env.gain.setValueAtTime(0.13, t1 - 0.06);
-      env.gain.exponentialRampToValueAtTime(0.2, t1 - 0.01);
+      env.gain.exponentialRampToValueAtTime(0.13 * k, t0 + 0.04);
+      env.gain.setValueAtTime(0.13 * k, t1 - 0.06);
+      env.gain.exponentialRampToValueAtTime(0.2 * k, t1 - 0.01);
       env.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.12);
       filter.connect(hum);
       hum.connect(env);
@@ -155,12 +165,12 @@
       lfo.start(t0);
       lfo.stop(t1 + 0.14);
       // The whine of a charging capacitor.
-      tone(700 * Math.pow(2, p * 0.5), 0, dur, { to: 3600 * Math.pow(2, p * 0.5), gain: 0.035 });
+      tone(700 * Math.pow(2, p * 0.5), 0, dur, { to: 3600 * Math.pow(2, p * 0.5), gain: 0.035 * k });
       // Sparks, sparse at first and thick at the end.
-      const pops = Math.round(dur * 26);
-      for (let k = 0; k < pops; k++) {
+      const pops = Math.round(Math.min(dur, 2.5) * 26);
+      for (let j = 0; j < pops; j++) {
         const at = dur * Math.sqrt(Math.random());
-        noise(at, 0.012 + Math.random() * 0.012, { freq: 2500 + Math.random() * 5000, q: 3, gain: 0.08 + 0.18 * (at / dur) });
+        noise(at, 0.012 + Math.random() * 0.012, { freq: 2500 + Math.random() * 5000, q: 3, gain: (0.08 + 0.18 * (at / dur)) * k });
       }
     },
     /*
@@ -172,7 +182,23 @@
      * of the range, so phone speakers carry it.
      */
     zap(progress) {
+      const ac = audio();
+      if (!ac) return;
+      // Landings close together: the first plays in full, later ones
+      // within a quarter second get only a soft chime, and past three
+      // they're skipped.
+      const now = ac.currentTime;
+      zapTimes = zapTimes.filter((t) => now - t < 0.25);
+      if (zapTimes.length >= 3) return;
+      const crowd = zapTimes.length;
+      zapTimes.push(now);
       const p = Math.max(0, Math.min(1, progress || 0));
+      if (crowd) {
+        const k0 = Math.round(p * 14);
+        const n0 = 392 * Math.pow(2, (12 * Math.floor(k0 / 5) + [0, 2, 4, 7, 9][k0 % 5]) / 12);
+        tone(n0, 0, 0.5, { type: 'triangle', gain: 0.07 / crowd });
+        return;
+      }
       const k = Math.round(p * 14);
       const note = 392 * Math.pow(2, (12 * Math.floor(k / 5) + [0, 2, 4, 7, 9][k % 5]) / 12);
       // The hit.

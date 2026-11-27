@@ -315,13 +315,14 @@
   // shape; it matches when the current shape's size and every choice agree.
   function presetMatches(p, c) {
     const size = c.shape === 'cube' ? ['n'] : ['w', 'h'];
-    return size.concat(CHOICE_KEYS).every((k) => p[k] === c[k]) && (!p.overclock || !!c.overclock);
+    return size.concat(CHOICE_KEYS).every((k) => p[k] === c[k]) && !!p.overclock === !!c.overclock;
   }
 
   function applyPreset(p) {
     const before = customSnapshot();
     ['w', 'h', 'n'].concat(CHOICE_KEYS).forEach((k) => (saved.custom[k] = p[k]));
-    if (p.overclock) saved.custom.overclock = true;
+    // Only Impossible runs overclocked; every other preset turns it off.
+    saved.custom.overclock = !!p.overclock;
     save();
     renderCustom();
     flashChanges(before, customSnapshot());
@@ -1142,15 +1143,10 @@
       pad.removeAttribute('visibility');
     } else pad.setAttribute('visibility', 'hidden');
     if (!g.classList.contains('energized')) return;
-    // A charged trace leaves an afterglow on the route behind it.
-    const a = Math.max(0, s - TRAIL);
-    const b = Math.min(s, track.total);
-    const near = Math.max(0, s - TRAIL * 0.4);
-    g.querySelector('.trail').setAttribute('d', b > a ? toPath(slice(track, a, b)) : '');
-    g.querySelector('.trail2').setAttribute('d', b > near ? toPath(slice(track, near, b)) : '');
+    // A charged trace crackles with lightning along its body. Nothing
+    // trails behind its tail: it ends cleanly at the pad.
     g.querySelector('.bolt').setAttribute('d', shape ? boltPath(track, s, shape.end) : '');
-    // A second, fainter bolt reaches back into the afterglow.
-    g.querySelector('.bolt2').setAttribute('d', b > near ? boltPath(track, near, shape ? shape.end : b) : '');
+    g.querySelector('.bolt2').setAttribute('d', shape ? boltPath(track, s, shape.end) : '');
   }
 
   /*
@@ -1252,7 +1248,7 @@
     }
     for (let y = 0; y < p.h; y++) {
       const t = el('text', { x: -0.42, y: y + 0.5 });
-      t.textContent = y + 1;
+      t.textContent = p.h - y; // row 1 at the bottom, so the bottom left is A1
       silk.appendChild(t);
     }
     svg.appendChild(silk);
@@ -2772,16 +2768,6 @@
         ctx.lineWidth = lw * 5.5;
         strokeRuns(ctx, routeRuns(r, s, end));
       }
-      if (charged) {
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = 0.3 * fade;
-        ctx.lineWidth = lw * 4;
-        strokeRuns(ctx, routeRuns(r, Math.max(0, s - TRAIL), s));
-        ctx.globalAlpha = 0.85 * fade;
-        ctx.lineWidth = lw * 1.4;
-        strokeRuns(ctx, routeRuns(r, Math.max(0, s - TRAIL * 0.4), s));
-        ctx.globalAlpha = fade;
-      }
       const runs = routeRuns(r, s, end);
       ctx.strokeStyle = zapped ? '#ffffff' : color;
       ctx.globalAlpha = (charged ? 0.5 : cube.hover === i ? 0.32 : 0.17) * fade;
@@ -2820,7 +2806,7 @@
         ctx.globalAlpha = 0.7 * fade;
         ctx.strokeStyle = mixWhite(color, 0.5);
         ctx.lineWidth = Math.max(1, lw * 0.35);
-        strokeRuns(ctx, routeRuns(r, Math.max(0, s - TRAIL * 0.4), end, true));
+        strokeRuns(ctx, routeRuns(r, s, end, true));
         ctx.lineJoin = 'miter';
       }
       ctx.globalAlpha = 1;
