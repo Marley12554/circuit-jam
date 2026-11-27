@@ -25,6 +25,10 @@
   --lab: var(--go);
 
   --font-display: 'Oxanium', 'Chakra Petch', 'Trebuchet MS', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --scope: #04070a;
+  --steel: rgba(120, 150, 165, 0.55);
+  --steel-dim: rgba(120, 150, 165, 0.09);
   --font-body: 'Exo 2', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif;
 
   color-scheme: dark;
@@ -1182,10 +1186,12 @@ input:focus-visible {
 /* ---------- Board ---------- */
 
 /*
- * The board is a dark chip. Traces are drawn in an SVG laid over it,
- * measured in cells: a soft glow, the trace, a pad at the tail, and an
- * open chevron at the head. A bus runs around the rim to the core at the
- * top, where every trace ends up.
+ * The board is a signal monitor: a near-black scope with faint scanlines
+ * and a hairline grid. Traces are drawn in an SVG laid over it, measured
+ * in cells: a fine dotted line in a muted tint, cut on the diagonal at
+ * corners, running into a solid chevron at the head, with a square
+ * terminal at the tail. A charging trace turns solid and burns in its
+ * bright color. A bus runs around the rim to the core at the top.
  */
 .board {
   position: relative;
@@ -1199,8 +1205,10 @@ input:focus-visible {
 
 .tray {
   position: absolute;
-  background: #0d2a31;
-  box-shadow: inset 0 0 0 1.5px var(--edge-soft), 0 20px 40px -20px #000;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px),
+    var(--scope);
+  box-shadow: inset 0 0 0 1px rgba(120, 150, 165, 0.28), 0 20px 40px -20px #000;
 }
 
 .board:focus-visible .tray {
@@ -1214,29 +1222,31 @@ input:focus-visible {
 }
 
 .chip {
-  fill: #0a2227;
-  stroke: rgba(80, 240, 200, 0.4);
-  stroke-width: 0.04;
-}
-
-.tiles rect {
-  fill: #143a42;
-  stroke: rgba(80, 240, 200, 0.16);
+  fill: none;
+  stroke: rgba(120, 150, 165, 0.3);
   stroke-width: 0.025;
+  stroke-dasharray: 0.12 0.12;
 }
 
-/* Column and row labels, like the printing on a circuit board. */
+/* Each cell is outlined in a hairline, so the grid reads without boxes. */
+.tiles rect {
+  fill: none;
+  stroke: var(--steel-dim);
+  stroke-width: 0.015;
+}
+
+/* Column and row labels, like a scope's axis readout. */
 .silk text {
-  fill: rgba(156, 198, 190, 0.6);
-  font: 600 0.27px var(--font-display);
+  fill: rgba(140, 165, 178, 0.55);
+  font: 500 0.24px var(--font-mono);
   text-anchor: middle;
   dominant-baseline: central;
 }
 
 .bus {
   fill: none;
-  stroke: color-mix(in srgb, var(--lab) 32%, transparent);
-  stroke-width: 0.05;
+  stroke: color-mix(in srgb, var(--lab) 26%, transparent);
+  stroke-width: 0.03;
 }
 
 .arrow {
@@ -1246,52 +1256,65 @@ input:focus-visible {
 .arrow .glow,
 .arrow .wire,
 .arrow .tip,
-.arrow .halo {
+.arrow .halo,
+.arrow .flow,
+.arrow .flow-glow {
   fill: none;
   stroke: var(--c);
   stroke-linejoin: miter;
 }
 
-.arrow .glow {
-  stroke-width: 0.36;
-  stroke-opacity: 0.17;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
+/* At rest: a fine dotted line, dense enough that its shape reads as one
+   continuous trace. */
 .arrow .wire {
-  stroke-width: 0.12;
+  stroke-width: 0.07;
   stroke-linecap: butt;
+  stroke-dasharray: 0.14 0.06;
 }
 
 .arrow .tip {
-  stroke-width: 0.12;
-  stroke-linecap: square;
+  stroke-width: 0.08;
+  stroke-linecap: butt;
 }
 
 .arrow .pad {
-  fill: var(--bg);
+  fill: var(--scope);
   stroke: var(--c);
-  stroke-width: 0.075;
+  stroke-width: 0.05;
+}
+
+.arrow .pad-in {
+  fill: var(--c);
+  stroke: none;
+}
+
+/* A soft glow only when it means something: hover, charging. */
+.arrow .glow {
+  stroke-width: 0.3;
+  stroke-opacity: 0;
+  stroke-linecap: butt;
 }
 
 .arrow.hover .wire,
 .arrow.hover .tip,
 .arrow.hover .pad {
-  stroke: color-mix(in srgb, var(--c) 60%, #ffffff);
+  stroke: color-mix(in srgb, var(--c) 55%, #ffffff);
+}
+
+.arrow.hover .pad-in {
+  fill: color-mix(in srgb, var(--c) 55%, #ffffff);
 }
 
 .arrow.hover .glow {
-  stroke-opacity: 0.32;
+  stroke-opacity: 0.14;
 }
 
 /* A hint: a white halo that breathes around one free trace. */
 .arrow .halo {
   display: none;
   stroke: #ffffff;
-  stroke-width: 0.66;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-width: 0.5;
+  stroke-linecap: butt;
 }
 
 .arrow.hint .halo {
@@ -1302,17 +1325,17 @@ input:focus-visible {
 @keyframes halo {
   0%,
   100% {
-    stroke-opacity: 0.18;
+    stroke-opacity: 0.12;
   }
   50% {
-    stroke-opacity: 0.55;
+    stroke-opacity: 0.4;
   }
 }
 
 .arrow.hint .wire,
 .arrow.hint .tip,
 .arrow.hint .pad {
-  stroke: color-mix(in srgb, var(--c) 55%, #ffffff);
+  stroke: color-mix(in srgb, var(--c) 50%, #ffffff);
 }
 
 /* A short: the trace flickers red. */
@@ -1336,49 +1359,78 @@ input:focus-visible {
   }
 }
 
-/* A charged trace: white-hot, with a bolt crackling along it and an
-   afterglow trailing behind it. */
-.arrow .trail,
-.arrow .trail2,
+/* Connecting: a bright front runs from tail to head, turning the dots
+   solid, with a spark riding it. */
+.arrow .flow {
+  stroke: var(--hot);
+  stroke-width: 0.09;
+  stroke-linecap: butt;
+}
+
+.arrow .flow-glow {
+  stroke: var(--hot);
+  stroke-width: 0.32;
+  stroke-opacity: 0.28;
+  stroke-linecap: butt;
+}
+
+.arrow .spark {
+  display: none;
+  fill: #ffffff;
+  filter: drop-shadow(0 0 0.08px #ffffff);
+}
+
+.arrow.connecting .spark {
+  display: inline;
+}
+
+.arrow.connecting .pad {
+  stroke: var(--hot);
+}
+
+.arrow.connecting .pad-in {
+  fill: #ffffff;
+}
+
+/* Connected: the head flashes as the circuit closes. */
+.arrow.connected .tip {
+  animation: tip-flash 0.25s ease-out 1;
+}
+
+@keyframes tip-flash {
+  from {
+    stroke: #ffffff;
+    stroke-width: 0.14;
+  }
+}
+
+/* Charging: solid and burning in its bright color, with a bolt
+   crackling along it. */
 .arrow .bolt {
   fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.arrow .trail {
-  stroke: var(--c);
-  stroke-width: 0.5;
-  stroke-opacity: 0.3;
-}
-
-.arrow .trail2 {
-  stroke: color-mix(in srgb, var(--c) 70%, #ffffff);
-  stroke-width: 0.17;
-  stroke-opacity: 0.85;
-}
-
-.arrow .bolt {
   stroke: #ffffff;
-  stroke-width: 0.07;
+  stroke-width: 0.045;
   stroke-linejoin: bevel;
+  stroke-linecap: butt;
 }
 
 .arrow .bolt2 {
   fill: none;
-  stroke: color-mix(in srgb, var(--c) 50%, #ffffff);
-  stroke-width: 0.04;
+  stroke: color-mix(in srgb, var(--hot) 50%, #ffffff);
+  stroke-width: 0.03;
   stroke-linejoin: bevel;
 }
 
 .arrow.energized .wire {
-  stroke: color-mix(in srgb, var(--c) 40%, #ffffff);
-  stroke-width: 0.15;
+  stroke: color-mix(in srgb, var(--hot) 70%, #ffffff);
+  stroke-width: 0.09;
+  stroke-dasharray: none;
 }
 
 .arrow.energized .glow {
-  stroke-opacity: 0.5;
-  stroke-width: 0.6;
+  stroke: var(--hot);
+  stroke-opacity: 0.3;
+  stroke-width: 0.34;
 }
 
 .arrow.energized .tip,
@@ -1386,11 +1438,19 @@ input:focus-visible {
   stroke: #ffffff;
 }
 
+.arrow.energized .pad-in {
+  fill: #ffffff;
+}
+
 /* The trace that got hit flashes white. */
 .arrow.zapped .wire,
 .arrow.zapped .tip,
 .arrow.zapped .pad {
   stroke: #ffffff;
+}
+
+.arrow.zapped .wire {
+  stroke-dasharray: none;
 }
 
 .arrow.zapped .glow {

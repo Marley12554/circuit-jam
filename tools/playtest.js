@@ -348,17 +348,29 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     });
     check((await zoom()) > 2, 'a pinch zooms the cube: ' + (await zoom()).toFixed(2));
     check((await num(p, 'leftCount')) === before, 'a pinch never taps a trace');
-    // Tap a free trace that is on screen at this zoom.
-    const target = await p.evaluate(() => {
+    // Tap a free trace while zoomed in: turn the cube to its face at fit,
+    // then wheel-zoom toward it (the wheel zooms toward the pointer), the
+    // way a player would.
+    await p.click('.zoom-tools [data-zoom="fit"]');
+    await p.waitForTimeout(100);
+    const pick = await p.evaluate(() => {
       const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
       const free = window.CircuitJamCore.freeArrows(run.puzzle, run.puzzle.arrows.map((a, i) => run.gone.includes(i)));
-      const r = document.querySelector('.cube-canvas').getBoundingClientRect();
-      for (const i of free) {
-        const pt = window.__circuitJamTest.cubePoint(i);
-        if (pt && pt[0] > r.left + 20 && pt[0] < r.right - 60 && pt[1] > r.top + 60 && pt[1] < r.bottom - 20) return pt;
-      }
-      return null;
+      const a = run.puzzle.arrows[free[0]];
+      window.__circuitJamTest.showFace(a.cells[a.cells.length - 1][0]);
+      return free[0];
     });
+    await p.waitForTimeout(700);
+    let target = await p.evaluate((i) => window.__circuitJamTest.cubePoint(i), pick);
+    if (target) {
+      await p.mouse.move(target[0], target[1]);
+      for (let k = 0; k < 4; k++) {
+        await p.mouse.wheel(0, -300);
+        await p.waitForTimeout(40);
+      }
+      target = await p.evaluate((i) => window.__circuitJamTest.cubePoint(i), pick);
+    }
+    check((await zoom()) > 1.5, 'the wheel zooms the cube toward the pointer: ' + (await zoom()).toFixed(2));
     if (target) {
       await p.mouse.click(target[0], target[1]);
       await p.waitForTimeout(60);

@@ -24,15 +24,26 @@
     lime: '#b8f24a',
     blue: '#6b8cff',
   };
-  // Repeats set the mix: three of the main color to one accent, and so on.
+  // Traces at rest wear a muted instrument tint of their color; charging,
+  // they burn in the bright one.
+  const TRACE = {
+    teal: '#6fb3a8',
+    amber: '#c4a66e',
+    violet: '#a08cc4',
+    magenta: '#c088b8',
+    cyan: '#7fb3cc',
+    lime: '#9fb872',
+    blue: '#7f9cc4',
+  };
+  // Four hues per set, the set's main color first.
   const SET_PALETTES = [
-    ['teal', 'teal', 'teal', 'amber'],
-    ['violet', 'violet', 'violet', 'lime'],
-    ['cyan', 'cyan', 'cyan', 'amber'],
-    ['amber', 'amber', 'teal', 'violet'],
-    ['blue', 'blue', 'cyan', 'magenta'],
-    ['teal', 'teal', 'violet', 'amber', 'magenta'],
-    ['magenta', 'magenta', 'cyan', 'lime', 'violet'],
+    ['teal', 'amber', 'blue', 'violet'],
+    ['violet', 'lime', 'cyan', 'amber'],
+    ['cyan', 'amber', 'magenta', 'teal'],
+    ['amber', 'teal', 'violet', 'blue'],
+    ['blue', 'cyan', 'magenta', 'lime'],
+    ['teal', 'violet', 'amber', 'magenta'],
+    ['magenta', 'cyan', 'lime', 'violet'],
   ];
   const CUSTOM_PALETTE = 5;
 
@@ -556,7 +567,7 @@
 
   function colorOf(i) {
     const name = game.palette[game.puzzle.arrows[i].color % game.palette.length];
-    return { name, hex: COLORS[name] };
+    return { name, hex: TRACE[name], bright: COLORS[name] };
   }
 
   let alertTimer = 0;
@@ -1075,6 +1086,31 @@
 
   const fmt = (n) => Math.round(n * 1000) / 1000;
   const toPath = (line) => 'M' + line.map((q) => fmt(q[0]) + ' ' + fmt(q[1])).join('L');
+
+  // Corners cut on the diagonal, like traces on a real board.
+  const CHAMFER = 0.3;
+  function chamfer(line, size) {
+    if (line.length < 3) return line;
+    const out = [line[0]];
+    for (let k = 1; k < line.length - 1; k++) {
+      const a = line[k - 1];
+      const b = line[k];
+      const c = line[k + 1];
+      const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      if (l1 < 1e-6 || l2 < 1e-6) continue;
+      const u1 = [(b[0] - a[0]) / l1, (b[1] - a[1]) / l1];
+      const u2 = [(c[0] - b[0]) / l2, (c[1] - b[1]) / l2];
+      if (Math.abs(u1[0] * u2[0] + u1[1] * u2[1]) > 0.99) {
+        out.push(b);
+        continue;
+      }
+      const cut = Math.min(size == null ? CHAMFER : size, l1 / 2, l2 / 2);
+      out.push([b[0] - u1[0] * cut, b[1] - u1[1] * cut], [b[0] + u2[0] * cut, b[1] + u2[1] * cut]);
+    }
+    out.push(line[line.length - 1]);
+    return out;
+  }
   const TRAIL = 4.5; // cells of afterglow behind a charged trace
 
   // The points of the route between two distances along it.
@@ -1107,10 +1143,11 @@
     if (want < track.total - 0.25) {
       const [ux, uy] = dirAt(track, end);
       const t = [head[0] + ux * 0.3, head[1] + uy * 0.3];
-      const base = [t[0] - ux * 0.28, t[1] - uy * 0.28];
-      tip = 'M' + fmt(base[0] - uy * 0.21) + ' ' + fmt(base[1] + ux * 0.21) + 'L' + fmt(t[0]) + ' ' + fmt(t[1]) + 'L' + fmt(base[0] + uy * 0.21) + ' ' + fmt(base[1] - ux * 0.21);
+      const base = [t[0] - ux * 0.26, t[1] - uy * 0.26];
+      tip = 'M' + fmt(base[0] - uy * 0.2) + ' ' + fmt(base[1] + ux * 0.2) + 'L' + fmt(t[0]) + ' ' + fmt(t[1]) + 'L' + fmt(base[0] + uy * 0.2) + ' ' + fmt(base[1] - ux * 0.2);
+      line.push(t); // the line runs into the arrow's tip
     }
-    return { body: toPath(line), tip, tail: line[0], head, end };
+    return { body: toPath(chamfer(line)), tip, tail: line[0], head, end };
   }
 
   // A crackling bolt along a charged trace: its route with a random
@@ -1137,11 +1174,18 @@
     g.querySelectorAll('.halo, .glow, .wire').forEach((p) => p.setAttribute('d', body));
     g.querySelector('.tip').setAttribute('d', shape ? shape.tip : '');
     const pad = g.querySelector('.pad');
+    const padIn = g.querySelector('.pad-in');
     if (shape) {
-      pad.setAttribute('cx', fmt(shape.tail[0]));
-      pad.setAttribute('cy', fmt(shape.tail[1]));
+      pad.setAttribute('x', fmt(shape.tail[0] - 0.14));
+      pad.setAttribute('y', fmt(shape.tail[1] - 0.14));
+      padIn.setAttribute('x', fmt(shape.tail[0] - 0.05));
+      padIn.setAttribute('y', fmt(shape.tail[1] - 0.05));
       pad.removeAttribute('visibility');
-    } else pad.setAttribute('visibility', 'hidden');
+      padIn.removeAttribute('visibility');
+    } else {
+      pad.setAttribute('visibility', 'hidden');
+      padIn.setAttribute('visibility', 'hidden');
+    }
     if (!g.classList.contains('energized')) return;
     // A charged trace crackles with lightning along its body. Nothing
     // trails behind its tail: it ends cleanly at the pad.
@@ -1257,8 +1301,12 @@
     arrowEls = p.arrows.map((a, i) => {
       const g = el('g', { class: 'arrow' });
       g.style.setProperty('--trace', colorOf(i).hex);
-      ['halo', 'trail', 'trail2', 'glow', 'wire', 'tip', 'bolt', 'bolt2'].forEach((c) => g.appendChild(el('path', { class: c })));
-      g.appendChild(el('circle', { class: 'pad', r: 0.14 }));
+      g.style.setProperty('--hot', colorOf(i).bright);
+      ['halo', 'glow', 'wire', 'flow-glow', 'flow', 'tip', 'bolt', 'bolt2'].forEach((c) => g.appendChild(el('path', { class: c })));
+      // The tail: a square terminal with a lit core.
+      g.appendChild(el('rect', { class: 'pad', width: 0.28, height: 0.28 }));
+      g.appendChild(el('rect', { class: 'pad-in', width: 0.1, height: 0.1 }));
+      g.appendChild(el('circle', { class: 'spark', r: 0.09 }));
       svg.appendChild(g);
       return g;
     });
@@ -1681,14 +1729,18 @@
     saveRun();
     const g = arrowEls[i];
     const track = paths[i];
-    const color = colorOf(i).hex;
-    if (g) {
-      g.classList.add('energized');
-      svg.insertBefore(g, core.g); // charged traces run on top
-    }
+    const color = colorOf(i).bright;
+    if (g) svg.insertBefore(g, core.g); // charged traces run on top
     const dist = track.total + TRAIL;
     const ms = 300 + dist * 36;
-    Sound.charge((ms * launchTime(track.total / dist)) / 1000, game.absorbed / total);
+    // First the energy connects the trace from tail to head, then it goes.
+    const connectMs = reduceMotion || !g ? 0 : Math.min(460, 150 + track.len * 38);
+    Sound.charge((connectMs + ms * launchTime(track.total / dist)) / 1000, game.absorbed / total);
+    if (connectMs) {
+      const done = await connect(i, connectMs);
+      if (!done) return;
+    }
+    if (g) g.classList.add('energized');
     let feeding = false;
     let inside = false;
     const ok = await slide(i, 0, dist, ms, launch, (at) => {
@@ -1705,6 +1757,49 @@
     if (!ok) return;
     if (g) g.remove();
     arrowEls[i] = null;
+  }
+
+  /*
+   * Energy connecting a trace: a bright front runs from the tail terminal
+   * along the dotted line to the head, turning it solid and lit as it
+   * goes, with a spark riding the front. Then the head flashes and the
+   * trace launches. Resolves false if the board changed meanwhile.
+   */
+  function connect(i, ms) {
+    const g = arrowEls[i];
+    const epoch = game.epoch;
+    const flow = g.querySelector('.flow');
+    const flowGlow = g.querySelector('.flow-glow');
+    const spark = g.querySelector('.spark');
+    const d = g.querySelector('.wire').getAttribute('d');
+    [flow, flowGlow].forEach((p) => {
+      p.setAttribute('d', d);
+      p.setAttribute('pathLength', '1');
+    });
+    const total = flow.getTotalLength ? flow.getTotalLength() : 0;
+    g.classList.add('connecting');
+    const start = performance.now();
+    return new Promise((resolve) => {
+      const step = (now) => {
+        if (epoch !== game.epoch || !g.isConnected) return resolve(false);
+        const t = Math.min(1, (now - start) / ms);
+        const f = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        const dash = f.toFixed(4) + ' 1';
+        flow.setAttribute('stroke-dasharray', dash);
+        flowGlow.setAttribute('stroke-dasharray', dash);
+        if (total) {
+          const q = flow.getPointAtLength(f * total);
+          spark.setAttribute('cx', fmt(q.x));
+          spark.setAttribute('cy', fmt(q.y));
+        }
+        if (t < 1) return requestAnimationFrame(step);
+        g.classList.remove('connecting');
+        g.classList.add('connected');
+        [flow, flowGlow].forEach((p) => p.setAttribute('d', ''));
+        resolve(true);
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   // The core glows white while a trace is pouring into it.
@@ -2720,31 +2815,32 @@
       ctx.beginPath();
       corners.forEach((c, k) => (k ? ctx.lineTo(c[0], c[1]) : ctx.moveTo(c[0], c[1])));
       ctx.closePath();
-      ctx.fillStyle = shade([10, 34, 39], light);
+      // A signal-monitor face: near-black, a steel edge, hairline grid.
+      ctx.fillStyle = shade([6, 11, 15], light);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(80, 240, 200, ' + (0.25 + 0.3 * facing).toFixed(2) + ')';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.fillStyle = shade([20, 58, 66], light);
-      ctx.strokeStyle = 'rgba(80, 240, 200, ' + (0.08 + 0.1 * facing).toFixed(2) + ')';
+      ctx.strokeStyle = 'rgba(120, 150, 165, ' + (0.22 + 0.25 * facing).toFixed(2) + ')';
       ctx.lineWidth = 1;
-      for (let v = 0; v < n; v++) {
-        for (let u = 0; u < n; u++) {
-          const q = [facePoint(f, u + 0.08, v + 0.08), facePoint(f, u + 0.92, v + 0.08), facePoint(f, u + 0.92, v + 0.92), facePoint(f, u + 0.08, v + 0.92)].map(project);
-          ctx.beginPath();
-          ctx.moveTo(q[0][0], q[0][1]);
-          ctx.lineTo(q[1][0], q[1][1]);
-          ctx.lineTo(q[2][0], q[2][1]);
-          ctx.lineTo(q[3][0], q[3][1]);
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
-        }
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(120, 150, 165, ' + (0.05 + 0.07 * facing).toFixed(2) + ')';
+      ctx.beginPath();
+      for (let k = 1; k < n; k++) {
+        const a = project(facePoint(f, k, 0));
+        const b = project(facePoint(f, k, n));
+        const c = project(facePoint(f, 0, k));
+        const d = project(facePoint(f, n, k));
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.moveTo(c[0], c[1]);
+        ctx.lineTo(d[0], d[1]);
       }
+      ctx.stroke();
       if (cube.cleared.has(f)) drawCleared(f, now, corners);
     }
     // Traces at rest, then moving ones on top.
-    const lw = Math.max(1.5, cube.s * 0.12);
+    const lw = Math.max(1.1, cube.s * 0.07);
+    const cut = cube.s * 0.3;
+    const dash = [cube.s * 0.14, cube.s * 0.06];
+    const bend = (runs) => runs.map((run) => chamfer(run, cut));
     ctx.lineJoin = 'miter';
     const order = [];
     p.arrows.forEach((a, i) => {
@@ -2756,47 +2852,82 @@
       const anim = cube.anims.get(i);
       const s = anim ? anim.s : 0;
       const charged = anim && anim.mode === 'leave';
+      const connecting = anim && anim.mode === 'connect';
       const shorting = anim && anim.mode === 'short' && anim.hit;
       const zapped = cube.zaps.has(i) && now - cube.zaps.get(i) < 260;
-      const color = shorting ? '#ff5d73' : colorOf(i).hex;
+      const bright = colorOf(i).bright;
+      const color = shorting ? '#ff5d73' : charged ? bright : colorOf(i).hex;
       const end = s + r.len - 1;
       const fade = charged && s > r.edgeAt ? Math.max(0, 1 - (s - r.edgeAt) / (r.len + 3)) : 1;
       ctx.globalAlpha = fade;
-      ctx.lineCap = 'round';
-      if (game.hinted === i && !charged) {
-        ctx.strokeStyle = 'rgba(255,255,255,' + (0.18 + 0.32 * (0.5 + 0.5 * Math.sin(now / 160))).toFixed(2) + ')';
-        ctx.lineWidth = lw * 5.5;
-        strokeRuns(ctx, routeRuns(r, s, end));
-      }
-      const runs = routeRuns(r, s, end);
-      ctx.strokeStyle = zapped ? '#ffffff' : color;
-      ctx.globalAlpha = (charged ? 0.5 : cube.hover === i ? 0.32 : 0.17) * fade;
-      ctx.lineWidth = lw * (charged ? 5 : 3);
-      strokeRuns(ctx, runs);
-      ctx.globalAlpha = fade;
       ctx.lineCap = 'butt';
-      ctx.strokeStyle = zapped || charged || cube.hover === i || game.hinted === i ? mixWhite(color, charged || zapped ? 0.6 : 0.4) : color;
-      ctx.lineWidth = lw * (charged ? 1.25 : 1);
-      strokeRuns(ctx, runs);
+      if (game.hinted === i && !charged) {
+        ctx.strokeStyle = 'rgba(255,255,255,' + (0.12 + 0.28 * (0.5 + 0.5 * Math.sin(now / 160))).toFixed(2) + ')';
+        ctx.lineWidth = lw * 6;
+        strokeRuns(ctx, bend(routeRuns(r, s, end)));
+      }
+      const runs = bend(routeRuns(r, s, end));
       const chev = end < r.total - 0.3 ? chevron(r, end) : null;
+      // The line runs on into the arrow's tip.
+      if (chev && runs.length) runs[runs.length - 1].push(chev[1]);
+      // A glow only when it means something: hover, charging.
+      if (charged || cube.hover === i) {
+        ctx.strokeStyle = zapped ? '#ffffff' : color;
+        ctx.globalAlpha = (charged ? 0.3 : 0.14) * fade;
+        ctx.lineWidth = lw * 4.5;
+        strokeRuns(ctx, runs);
+        ctx.globalAlpha = fade;
+      }
+      const lit = zapped || charged || cube.hover === i || game.hinted === i;
+      ctx.strokeStyle = lit ? mixWhite(color, charged || zapped ? 0.35 : 0.45) : color;
+      ctx.lineWidth = lw * (charged ? 1.3 : 1);
+      // At rest the line is finely dotted; charging, it's solid.
+      if (!charged && !zapped) ctx.setLineDash(dash);
+      strokeRuns(ctx, runs);
+      ctx.setLineDash([]);
       if (chev) {
-        ctx.lineCap = 'square';
+        ctx.lineWidth = lw * 1.15;
         ctx.beginPath();
         ctx.moveTo(chev[0][0], chev[0][1]);
         ctx.lineTo(chev[1][0], chev[1][1]);
         ctx.lineTo(chev[2][0], chev[2][1]);
         ctx.stroke();
       }
-      // The pad at the tail.
+      const rest = ctx.strokeStyle;
+      // Connecting: a bright solid front runs from the tail to the head,
+      // with a spark riding it.
+      if (connecting && anim.f > 0) {
+        const reach = anim.f * (r.len - 1 + 0.3);
+        const front = bend(routeRuns(r, 0, Math.max(0.01, reach)));
+        ctx.strokeStyle = bright;
+        ctx.globalAlpha = 0.28;
+        ctx.lineWidth = lw * 4.5;
+        strokeRuns(ctx, front);
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = lw * 1.3;
+        strokeRuns(ctx, front);
+        const at = Math.min(reach, r.len - 1);
+        if (shown(r.faces[segmentAt(r, at)])) {
+          const q = project(routePoint(r, at));
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(q[0], q[1], Math.max(1.6, lw * 1.3), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // The tail: a square terminal with a lit core.
       const tk = segmentAt(r, s);
       if (shown(r.faces[tk]) && s < r.edgeAt + 0.5) {
         const t = project(routePoint(r, s));
-        ctx.beginPath();
-        ctx.arc(t[0], t[1], Math.max(2, cube.s * 0.14 * t[2]), 0, Math.PI * 2);
-        ctx.fillStyle = '#0a1f24';
-        ctx.fill();
-        ctx.lineWidth = Math.max(1.2, cube.s * 0.075);
-        ctx.stroke();
+        const half = Math.max(2.2, cube.s * 0.14 * t[2]);
+        const tail = charged || connecting ? '#ffffff' : rest;
+        ctx.fillStyle = '#05090c';
+        ctx.fillRect(t[0] - half, t[1] - half, half * 2, half * 2);
+        ctx.strokeStyle = tail;
+        ctx.lineWidth = Math.max(1, lw * 0.75);
+        ctx.strokeRect(t[0] - half, t[1] - half, half * 2, half * 2);
+        ctx.fillStyle = tail;
+        ctx.fillRect(t[0] - half * 0.36, t[1] - half * 0.36, half * 0.72, half * 0.72);
       }
       if (charged) {
         ctx.strokeStyle = '#ffffff';
@@ -3051,7 +3182,11 @@
       }
       active = true;
       const t = anim.ms > 0 ? (now - anim.start) / anim.ms : 1;
-      if (anim.mode === 'leave') {
+      if (anim.mode === 'connect') {
+        const ct = Math.min(1, t);
+        anim.f = ct < 0.5 ? 2 * ct * ct : 1 - Math.pow(-2 * ct + 2, 2) / 2;
+        if (ct >= 1) cube.anims.set(i, Object.assign(anim.next, { start: now }));
+      } else if (anim.mode === 'leave') {
         anim.s = anim.stop * launch(Math.min(1, t));
         const r = cube.routes[i];
         if (!anim.counted && anim.s >= r.edgeAt) {
@@ -3126,8 +3261,11 @@
     const r = cube.routes[i];
     const stop = r.edgeAt + r.len + 3;
     const ms = reduceMotion ? 0 : 300 + stop * 36;
-    Sound.charge(((ms || 300) * launchTime(r.edgeAt / stop)) / 1000, game.absorbed / total);
-    cube.anims.set(i, { mode: 'leave', start: performance.now(), ms, stop, s: 0, counted: false, epoch: game.epoch });
+    // First the energy connects the trace from tail to head, then it goes.
+    const connectMs = reduceMotion ? 0 : Math.min(460, 150 + r.len * 38);
+    Sound.charge((connectMs + (ms || 300) * launchTime(r.edgeAt / stop)) / 1000, game.absorbed / total);
+    const go = { mode: 'leave', start: performance.now(), ms, stop, s: 0, counted: false, epoch: game.epoch };
+    cube.anims.set(i, connectMs ? { mode: 'connect', start: performance.now(), ms: connectMs, f: 0, s: 0, epoch: game.epoch, next: go } : go);
     cubeKick();
   }
 
@@ -3639,12 +3777,16 @@
     cubePoint(i) {
       if (!isCube() || !cube.canvas) return null;
       const r = cube.canvas.getBoundingClientRect();
+      // A cell in view if there is one, else the first one facing us.
+      let first = null;
       for (const c of game.puzzle.arrows[i].cells) {
         if (!shown(c[0])) continue;
         const q = project(facePoint(c[0], c[1] + 0.5, c[2] + 0.5));
-        return [r.left + q[0], r.top + q[1]];
+        const pt = [r.left + q[0], r.top + q[1]];
+        if (q[0] > 20 && q[0] < r.width - 60 && q[1] > 60 && q[1] < r.height - 20) return pt;
+        if (!first) first = pt;
       }
-      return null;
+      return first;
     },
     showFace(f) {
       const v = M3.apply(cube.R, Core.CUBE_FACES[f].n);

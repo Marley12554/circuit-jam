@@ -1224,28 +1224,78 @@
    * Colors: touching arrows never share one, so every arrow reads clearly.
    * Placement order, with a seeded pick among the colors left.
    */
-  const PALETTE_SIZE = 12;
+  // Four slots, so touching arrows get four different hues where they can.
+  const PALETTE_SIZE = 4;
 
   function colorArrows(puzzle, rng) {
     const g = geometryOf(puzzle);
     const occ = occupancy(puzzle, null);
-    puzzle.arrows.forEach((a, i) => {
-      const near = new Set();
+    const n = puzzle.arrows.length;
+    const near = puzzle.arrows.map((a, i) => {
+      const set = new Set();
       a.cells.forEach((cell) => {
         const k = g.key(cell);
         for (let d = 0; d < 4; d++) {
           const m = g.nb[k * 4 + d];
-          if (m < 0) continue;
-          const j = occ[m];
-          if (j !== -1 && j < i) near.add(puzzle.arrows[j].color);
+          if (m >= 0 && occ[m] !== -1 && occ[m] !== i) set.add(occ[m]);
         }
       });
-      const open = [];
-      for (let c = 0; c < PALETTE_SIZE; c++) if (!near.has(c)) open.push(c);
-      a.color = open.length ? open[rng.int(open.length)] : rng.int(PALETTE_SIZE);
+      return Array.from(set);
     });
+    // DSatur: color next the arrow whose neighbors already use the most
+    // different colors (ties: most neighbors), with a seeded pick among
+    // the colors still open; four colors almost always suffice that way.
+    const color = new Int8Array(n).fill(-1);
+    const seen = near.map(() => new Set());
+    for (let step = 0; step < n; step++) {
+      let best = -1;
+      for (let i = 0; i < n; i++) {
+        if (color[i] >= 0) continue;
+        if (best < 0 || seen[i].size > seen[best].size || (seen[i].size === seen[best].size && near[i].length > near[best].length)) best = i;
+      }
+      const open = [];
+      for (let c = 0; c < PALETTE_SIZE; c++) if (!seen[best].has(c)) open.push(c);
+      let c;
+      if (open.length) c = open[rng.int(open.length)];
+      else {
+        // No color free: take the one fewest neighbors use.
+        const count = new Array(PALETTE_SIZE).fill(0);
+        near[best].forEach((j) => color[j] >= 0 && count[color[j]]++);
+        c = count.indexOf(Math.min(...count));
+      }
+      color[best] = c;
+      near[best].forEach((j) => seen[j].add(c));
+    }
+    // Repair the rare clash: recolor the arrow to a color no neighbor uses,
+    // or move a neighbor to a color its own neighbors leave free.
+    const freeFor = (i) => {
+      const used = new Set(near[i].map((j) => color[j]));
+      const open = [];
+      for (let c = 0; c < PALETTE_SIZE; c++) if (!used.has(c)) open.push(c);
+      return open;
+    };
+    for (let pass = 0; pass < 4; pass++) {
+      let clashes = 0;
+      for (let i = 0; i < n; i++) {
+        if (!near[i].some((j) => color[j] === color[i])) continue;
+        clashes++;
+        const open = freeFor(i);
+        if (open.length) {
+          color[i] = open[rng.int(open.length)];
+          continue;
+        }
+        for (const j of near[i]) {
+          if (color[j] !== color[i]) continue;
+          const alt = freeFor(j).filter((c) => c !== color[i]);
+          if (alt.length) color[j] = alt[rng.int(alt.length)];
+        }
+      }
+      if (!clashes) break;
+    }
+    puzzle.arrows.forEach((a, i) => (a.color = color[i]));
     return puzzle;
   }
+
 
   /*
    * Deals several boards at the same settings, rates them, sorts them from
@@ -1346,7 +1396,7 @@
     h: 4,
     arrows: [
       { cells: [[0, 3], [0, 2], [0, 1]], color: 0 },
-      { cells: [[2, 1], [1, 1]], color: 7 },
+      { cells: [[2, 1], [1, 1]], color: 3 },
       { cells: [[1, 3], [2, 3], [2, 2]], color: 2 },
     ],
   };
