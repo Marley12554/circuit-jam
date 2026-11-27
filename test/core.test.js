@@ -301,18 +301,27 @@ test('overclocked levels start at 14 and come a few per set', () => {
   }
 });
 
-test('overclock power: refills follow the simulated player, with a battery', () => {
+test('overclock is a countdown sized by the simulated player', () => {
   const lv = Core.generateLevel(30);
   const kind = Core.overclockFor(lv, 1.5);
   const tight = Core.overclockFor(lv, 1.0);
-  assert.ok(Math.abs(tight.refill - lv.pace) < 1e-9, 'slack 1 refills exactly the simulated pace');
-  assert.ok(kind.refill > tight.refill);
-  assert.strictEqual(kind.cap, 2 * kind.max);
-  assert.ok(kind.cost > kind.refill && kind.cost <= 3);
+  assert.ok(Math.abs(tight.max - (10 + lv.arrows.length * lv.pace)) < 1e-6, 'slack 1: the simulated time for the whole board plus 10 s');
+  assert.ok(kind.max > tight.max);
+  assert.strictEqual(kind.refill, 0, 'clears refill nothing');
+  assert.strictEqual(kind.cap, kind.max, 'no battery');
+  assert.ok(kind.cost > 0 && kind.cost <= 3);
   assert.strictEqual(Core.overclockSlack('level'), 1.5);
   const max = { shape: 'flat', w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, seed: 1 };
-  assert.strictEqual(Core.overclockSlack('custom', max), 0.93);
+  assert.strictEqual(Core.overclockSlack('custom', max), 0.95);
   assert.strictEqual(Core.overclockSlack('custom', Object.assign({}, max, { w: 12 })), 1.2);
+});
+
+test('packed boards are filled, and still clear', () => {
+  for (const shape of ['flat', 'cube']) {
+    const p = Core.generate(Core.customSpec({ shape, w: 20, h: 26, n: 8, density: 2, length: 2, bend: 2, seed: 3 }));
+    assert.ok(p.fill > 0.94, shape + ' fill ' + p.fill);
+    assert.ok(Core.isClearable(p), shape + ' clearable');
+  }
 });
 
 test('the simulated player: chains are quick, a scan across the board is slow', () => {

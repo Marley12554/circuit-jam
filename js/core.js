@@ -1084,6 +1084,137 @@
     return Object.assign(shapeOf(spec), { arrows, filled });
   }
 
+  /*
+   * Fill: untangling takes arrows out, which leaves holes, and every hole
+   * is a free sightline. On packed boards (density 0.95 and up) the holes
+   * are tiled again with new arrows, each pointed so it can't close a
+   * loop, preferring a direction where something blocks it, so filling
+   * never hands out free arrows. A lone empty cell stays empty.
+   *
+   * Arrow A waits on B when B sits in A's lane. A new arrow X waits on the
+   * arrows in its lane and makes every arrow whose lane crosses its cells
+   * wait on it; that closes a loop exactly when something X waits on
+   * already waits, through others, on one of those.
+   */
+  function fillHoles(spec, board, rng) {
+    if (!(spec.density >= 0.95)) return board;
+    const g = geometryOf(spec);
+    const N = g.count;
+    const occ = new Int32Array(N).fill(-1);
+    const arrows = board.arrows.map((a) => a.cells.map(g.key));
+    arrows.forEach((cells, i) => cells.forEach((c) => (occ[c] = i)));
+    const lanes = [];
+    const through = Array.from({ length: N }, () => []);
+    const waits = [];
+    const laneOf = (cells) => {
+      const head = cells[cells.length - 1];
+      const d = g.dirBetween(cells[cells.length - 2], head);
+      return d < 0 ? null : g.lane(head, d);
+    };
+    arrows.forEach((cells, i) => {
+      const lane = laneOf(cells) || [];
+      lanes.push(lane);
+      lane.forEach((c) => through[c].push(i));
+    });
+    arrows.forEach((cells, i) => {
+      const w = new Set();
+      lanes[i].forEach((c) => occ[c] >= 0 && w.add(occ[c]));
+      waits.push(Array.from(w));
+    });
+    const seen = new Int32Array(arrows.length + N).fill(0);
+    let stamp = 0;
+    // Does anything in `from` wait, directly or through others, on one of `targets`?
+    const reaches = (from, targets) => {
+      if (!targets.size || !from.length) return false;
+      stamp++;
+      const stack = from.slice();
+      while (stack.length) {
+        const a = stack.pop();
+        if (targets.has(a)) return true;
+        if (seen[a] === stamp) continue;
+        seen[a] = stamp;
+        for (const b of waits[a]) if (seen[b] !== stamp) stack.push(b);
+      }
+      return false;
+    };
+    const openAround = (c) => {
+      let n = 0;
+      for (let d = 0; d < 4; d++) {
+        const m = g.nb[c * 4 + d];
+        if (m >= 0 && occ[m] === -1) n++;
+      }
+      return n;
+    };
+    const dead = new Uint8Array(N);
+    const maxLen = Math.max(2, Math.min(spec.maxLen || 4, 6));
+    for (;;) {
+      let start = -1;
+      let best = Infinity;
+      for (let c = 0; c < N; c++) {
+        if (occ[c] !== -1 || dead[c]) continue;
+        const sc = openAround(c) + rng() * 0.5;
+        if (sc < best) {
+          best = sc;
+          start = c;
+        }
+      }
+      if (start < 0) break;
+      // Walk a short path through the hole.
+      const path = [start];
+      const inPath = new Set(path);
+      while (path.length < maxLen) {
+        const c = path[path.length - 1];
+        let pick = -1;
+        let ps = Infinity;
+        for (let d = 0; d < 4; d++) {
+          const m = g.nb[c * 4 + d];
+          if (m < 0 || occ[m] !== -1 || dead[m] || inPath.has(m)) continue;
+          const sc = openAround(m) + rng();
+          if (sc < ps) {
+            ps = sc;
+            pick = m;
+          }
+        }
+        if (pick < 0) break;
+        path.push(pick);
+        inPath.add(pick);
+      }
+      // Try both directions, keeping only ones that close no loop; shorten
+      // the path from its end if neither works.
+      let placed = false;
+      for (let len = path.length; len >= 2 && !placed; len--) {
+        const cut = path.slice(0, len);
+        const opts = [];
+        for (const cells of [cut, cut.slice().reverse()]) {
+          const lane = laneOf(cells);
+          if (!lane || lane.some((c) => cells.includes(c))) continue;
+          const w = new Set();
+          lane.forEach((c) => occ[c] >= 0 && w.add(occ[c]));
+          const dependents = new Set();
+          cells.forEach((c) => through[c].forEach((j) => dependents.add(j)));
+          if (reaches(Array.from(w), dependents)) continue;
+          opts.push({ cells, lane, w: Array.from(w), dependents });
+        }
+        if (!opts.length) continue;
+        const blocked = opts.filter((o) => o.w.length);
+        const pool = blocked.length ? blocked : opts;
+        const o = pool[rng.int(pool.length)];
+        const id = arrows.length;
+        arrows.push(o.cells);
+        lanes.push(o.lane);
+        waits.push(o.w);
+        o.cells.forEach((c) => (occ[c] = id));
+        o.lane.forEach((c) => through[c].push(id));
+        o.dependents.forEach((j) => waits[j].push(id));
+        placed = true;
+      }
+      if (!placed) dead[start] = 1;
+    }
+    let filled = 0;
+    arrows.forEach((c) => (filled += c.length));
+    return Object.assign(shapeOf(board), { arrows: arrows.map((cells) => ({ cells: cells.map(g.cellOf) })), filled });
+  }
+
   // The fields that say what shape a board is.
   function shapeOf(p) {
     return p.kind === 'cube' ? { kind: 'cube', n: p.n } : { w: p.w, h: p.h };
@@ -1137,6 +1268,7 @@
       // reverse removal order, which always gives a clearable board.
       if (board.arrows.length < 2 && spec.kind !== 'cube') board = build(spec, rng);
       if (board.arrows.length < 2) continue;
+      board = fillHoles(spec, board, rng);
       const r = rate(board, seed);
       found.push(Object.assign(board, r, { attempt, pace: humanPace(board).perTrace }));
     }
@@ -1304,32 +1436,26 @@
    * boards with a higher rating (fewer free traces among more).
    */
   /*
-   * How much power an overclocked board gets. The refill per trace is the
-   * time the simulated player needs per trace on this board, times
-   * `slack`: 1 matches the player it was fitted to, more is kinder, less
-   * is tighter (Impossible uses 0.93: in recorded play that player beat
-   * the simulation by about 10% on newer boards). Cubes get 40% more on top: measured play
-   * covers only the start of one cube, and they are the harder shape. The
-   * bar starts full (12 to 30 seconds, more for more traces) and can
-   * overcharge to twice that: the battery, so clearing fast is never
-   * wasted. A short costs one and a half refills, but never more than 3
-   * seconds, so a slip on a slow board isn't ruinous.
+   * How much time an overclocked board gets. It's a plain countdown: the
+   * whole board's budget up front, nothing refilled by clears, so going
+   * faster is always better and waiting never is. The budget is the time
+   * the simulated player needs for the whole board (cube faces included),
+   * times `slack` (1 matches the player it was fitted to, more is kinder,
+   * less tighter), plus 10 seconds to get your bearings. A short costs
+   * about one and a half traces' worth, never more than 3 seconds.
    */
-  const CUBE_SLACK = 1.4;
-
   function overclockFor(puzzle, slack) {
     const n = puzzle.arrows.length;
     const pace = puzzle.pace || humanPace(puzzle).perTrace;
-    const refill = pace * (slack || 1.2) * (puzzle.kind === 'cube' ? CUBE_SLACK : 1);
-    const max = Math.max(12, Math.min(30, 10 + n * 0.15));
-    return { max, cap: 2 * max, refill, cost: Math.min(3, refill * 1.5) };
+    const max = 10 + n * pace * (slack || 1.2);
+    return { max, cap: max, refill: 0, cost: Math.min(3, pace * 1.5) };
   }
 
   // How kind the clock is: the campaign is for everyone, a custom board a
   // little tighter, and a board maxed out on every setting is tuned tight.
   function overclockSlack(mode, custom) {
     if (mode === 'level') return 1.5;
-    return custom && customSpec(custom).hard === 1 ? 0.93 : 1.2;
+    return custom && customSpec(custom).hard === 1 ? 0.95 : 1.2;
   }
 
 

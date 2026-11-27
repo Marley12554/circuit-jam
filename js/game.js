@@ -57,10 +57,10 @@
     2: 'A blocked trace shorts out and stays put. Look before you tap!',
     6: 'Bent traces! Only the path in front of the arrow matters. The rest just follows.',
     11: 'New chip, new colors. Find the traces with a clear path!',
-    14: 'Overclocked! The core drains while you play. Clear traces fast to keep it powered, and every short drains it more.',
+    14: 'Overclocked! The core counts down while you play. Clear every trace before it runs dry, and every short drains it more.',
     21: 'Longer traces that twist and turn. Follow each one to its arrow!',
   };
-  const OC_CHEERS = ['Overclocked! Keep the core powered.', 'Overclocked! Move fast, tap clean.', 'The core is draining. Go!'];
+  const OC_CHEERS = ['Overclocked! Beat the clock.', 'Overclocked! Move fast, tap clean.', 'The core is draining. Go!'];
   const CHEERS = ["Let's power this up!", 'Find a clear path!', 'Look before you tap!', 'Charge the core!', 'One clear lane at a time!'];
   const CLEARS = ['Charged!', 'Into the core!', 'Clean signal!', 'Nice routing!', 'Power up!', 'Sharp eye!'];
 
@@ -882,7 +882,7 @@
     oc.lastClear = now;
     const h = heatOf(oc);
     if (h > 0) Sound.restore(h, oc.chain);
-    oc.S = Math.min(oc.cap, oc.S + oc.refill);
+    oc.S = Math.min(oc.cap, oc.S + oc.refill); // a countdown: refill is 0
     flashPower('charge');
     drawPower();
   }
@@ -987,7 +987,7 @@
     $('winStats').textContent = cleared + ' of ' + n + ' traces cleared';
     game.result = { won: false, cleared, total: n };
     $('shareNote').hidden = true;
-    $('winNote').textContent = 'Overclocked: the core drains every second. Each trace you clear tops it up, and each short drains a chunk.';
+    $('winNote').textContent = 'Overclocked: the core counts down from the moment you start. Clear every trace before it runs dry; each short drains a chunk.';
     $('winCode').hidden = true;
     $('replayBtn').hidden = true;
     $('nextBtn').querySelector('.big-label').textContent = 'Try again';

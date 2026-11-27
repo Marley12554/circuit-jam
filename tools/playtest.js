@@ -422,8 +422,9 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.context().close();
   }
 
-  // Overclock: level 14 is timed. The map marks it, the core drains, clears
-  // top it up, shorts drain it, an empty core loses, and Try again resets.
+  // Overclock: level 14 is timed. The map marks it, the core counts down,
+  // clears refill nothing, shorts drain it, an empty core loses, and Try
+  // again resets.
   {
     const p = await open(progressTo(14));
     check((await p.textContent('#playSub')).includes('Overclocked'), 'home says the next level is overclocked');
@@ -440,16 +441,10 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await p.waitForTimeout(2600);
     const drained = await p.evaluate(() => __circuitJamTest.power());
     check(drained.S < start.S - 0.5, 'the core drains: ' + start.S.toFixed(1) + ' to ' + drained.S.toFixed(1));
-    await p.evaluate(() => __circuitJamTest.setPower(5));
+    await p.evaluate(() => __circuitJamTest.setPower(15));
     await tapArrow(p, (await freeNow(p))[0]);
-    const topped = (await p.evaluate(() => __circuitJamTest.power())).S;
-    check(topped > 5.5, 'a clear tops the core up: ' + topped.toFixed(2));
-    // The battery: clearing on a full bar overcharges it instead of wasting it.
-    await p.evaluate((m) => __circuitJamTest.setPower(m), start.max);
-    await tapArrow(p, (await freeNow(p))[0]);
-    const over = await p.evaluate(() => __circuitJamTest.power());
-    check(over.S > over.max, 'a clear on a full bar overcharges the battery: ' + over.S.toFixed(1) + ' of ' + over.max.toFixed(1));
-    check(await p.evaluate(() => parseFloat(document.getElementById('powerOver').style.getPropertyValue('--fill')) > 0), 'the overcharge shows on the bar');
+    const after1 = (await p.evaluate(() => __circuitJamTest.power())).S;
+    check(after1 <= 15.01, 'a clear refills nothing (a countdown): ' + after1.toFixed(2));
     const blocked = await blockedNow(p);
     await p.evaluate(() => __circuitJamTest.setPower(10));
     await tapArrow(p, blocked);
@@ -463,29 +458,17 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     const resumed = (await p.evaluate(() => __circuitJamTest.power())).S;
     check(resumed > 7 && resumed <= 8.01, 'resume keeps the power: ' + resumed.toFixed(2));
     await p.waitForTimeout(1800); // past the moment's grace after resuming
-    await p.evaluate((m) => __circuitJamTest.setPower(m * 0.6), start.max);
+    await p.evaluate(() => __circuitJamTest.setPower(14));
     await p.waitForTimeout(200);
-    check(!(await p.evaluate(() => document.getElementById('board').classList.contains('dying'))), 'at 60% power all is calm');
-    await p.evaluate((m) => __circuitJamTest.setPower(m * 0.45), start.max);
+    check(!(await p.evaluate(() => document.getElementById('board').classList.contains('dying'))), 'with 14 s left all is calm');
+    await p.evaluate(() => __circuitJamTest.setPower(8.5));
     await p.waitForTimeout(200);
     const warm = await p.evaluate(() => [document.getElementById('board').classList.contains('dying'), +getComputedStyle(document.getElementById('power')).getPropertyValue('--heat'), document.getElementById('powerSecs').textContent]);
-    check(warm[0] && warm[1] > 0 && warm[1] < 0.3 && warm[2] === '', 'at 45% it only starts to warm: heat ' + warm[1]);
-    await p.evaluate((m) => __circuitJamTest.setPower(m * 0.2), start.max);
+    check(warm[0] && warm[1] > 0 && warm[1] < 0.3 && warm[2] === '', 'with 8.5 s left it only starts to warm: heat ' + warm[1]);
+    await p.evaluate(() => __circuitJamTest.setPower(3));
     await p.waitForTimeout(200);
     check(await p.evaluate(() => document.getElementById('board').classList.contains('dying')), 'low power: the core starts dying');
     check(/^\d+\.\ds$/.test(await p.textContent('#powerSecs')), 'low power: the seconds left show: ' + (await p.textContent('#powerSecs')));
-    // Climbing out calms the effects even though the level is still low.
-    await p.evaluate((m) => __circuitJamTest.setPower(m * 0.08), start.max);
-    await p.waitForTimeout(500);
-    const before = await p.evaluate(() => __circuitJamTest.heat());
-    for (let k = 0; k < 2; k++) {
-      const f = await freeNow(p);
-      if (f.length) await tapArrow(p, f[0]);
-      await p.waitForTimeout(150);
-    }
-    await p.waitForTimeout(250);
-    const after = await p.evaluate(() => __circuitJamTest.heat());
-    check(after.true > 0.2 && after.felt < after.true * 0.7 && after.felt < before.felt, `climbing out calms the alarm: felt ${before.felt.toFixed(2)} -> ${after.felt.toFixed(2)} at true heat ${after.true.toFixed(2)}`);
     await p.evaluate(() => __circuitJamTest.setPower(0.05));
     await p.waitForSelector('#win:not([hidden])', { timeout: 4000 });
     check((await p.textContent('#winTitle')) === 'Core drained!', 'an empty core loses the board');
@@ -590,20 +573,23 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
       const free = new Set(window.CircuitJamCore.freeArrows(lv, gone));
       const owner = {};
       lv.arrows.forEach((a, i) => a.cells.forEach(([x, y]) => (owner[x + ',' + y] = i)));
+      // The pair nearest the middle (clear of the zoom buttons in the corner).
+      let best = null;
       for (const [key, i] of Object.entries(owner)) {
         if (free.has(i)) continue;
         const [x, y] = key.split(',').map(Number);
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const j = owner[x + dx + ',' + (y + dy)];
-          if (j != null && free.has(j)) {
-            const svg = document.querySelector('.arrows').getBoundingClientRect();
-            const cell = svg.width / lv.w;
-            const px = (fx, fy) => [svg.left + fx * cell, svg.top + fy * cell];
-            return { slip: px(x + 0.5 + dx * 0.4, y + 0.5 + dy * 0.4), middle: px(x + 0.5, y + 0.5) };
-          }
+          if (j == null || !free.has(j)) continue;
+          const d = Math.hypot(x - lv.w / 2, y - lv.h / 2);
+          if (!best || d < best.d) best = { d, x, y, dx, dy };
         }
       }
-      return null;
+      if (!best) return null;
+      const svg = document.querySelector('.arrows').getBoundingClientRect();
+      const cell = svg.width / lv.w;
+      const px = (fx, fy) => [svg.left + fx * cell, svg.top + fy * cell];
+      return { slip: px(best.x + 0.5 + best.dx * 0.4, best.y + 0.5 + best.dy * 0.4), middle: px(best.x + 0.5, best.y + 0.5) };
     });
     if (pair) {
       const left = await num(p, 'leftCount');

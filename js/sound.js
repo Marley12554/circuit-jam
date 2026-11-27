@@ -174,47 +174,29 @@
       }
     },
     /*
-     * A trace landing in the core: a crack and a thump as it hits, a quick
-     * upward sweep as the charge pours in, then a bell-like chime that
-     * rings out with the core's ripple while it hums and throws off a few
-     * sparks. Each landing chimes a step higher up a pentatonic scale, so
-     * the charge-up keeps climbing as the core fills. Mostly in the middle
-     * of the range, so phone speakers carry it.
+     * A trace landing in the core: a short, clean computer chirp, a step
+     * higher up a pentatonic scale for each trace the core has taken, with
+     * a soft tick under it. Every landing gets its own chirp, right as it
+     * lands, but chirps that crowd together play quieter (and past five in
+     * a fifth of a second the extras are left out), so a cluster sounds
+     * like a quick rising run instead of a racket.
      */
     zap(progress) {
       const ac = audio();
       if (!ac) return;
-      // Landings close together: the first plays in full, later ones
-      // within a quarter second get only a soft chime, and past three
-      // they're skipped.
       const now = ac.currentTime;
-      zapTimes = zapTimes.filter((t) => now - t < 0.25);
-      if (zapTimes.length >= 3) return;
-      const crowd = zapTimes.length;
+      zapTimes = zapTimes.filter((t) => now - t < 0.2);
+      if (zapTimes.length >= 5) return;
+      const k = 1 / (1 + 0.6 * zapTimes.length);
+      const first = !zapTimes.length;
       zapTimes.push(now);
       const p = Math.max(0, Math.min(1, progress || 0));
-      if (crowd) {
-        const k0 = Math.round(p * 14);
-        const n0 = 392 * Math.pow(2, (12 * Math.floor(k0 / 5) + [0, 2, 4, 7, 9][k0 % 5]) / 12);
-        tone(n0, 0, 0.5, { type: 'triangle', gain: 0.07 / crowd });
-        return;
-      }
-      const k = Math.round(p * 14);
-      const note = 392 * Math.pow(2, (12 * Math.floor(k / 5) + [0, 2, 4, 7, 9][k % 5]) / 12);
-      // The hit.
-      tone(170, 0, 0.22, { to: 42, gain: 0.38 });
-      tone(240, 0, 0.16, { type: 'square', to: 90, gain: 0.06 });
-      noise(0, 0.1, { freq: 3800, q: 0.7, gain: 0.3 });
-      // The charge pouring in.
-      tone(note / 2, 0, 0.13, { type: 'sawtooth', to: note * 1.5, gain: 0.07 });
-      noise(0, 0.14, { freq: 900, to: 6000, q: 1.5, gain: 0.08 });
-      // The chime, with a fifth and an octave over it.
-      tone(note, 0.06, 0.75, { type: 'triangle', gain: 0.13 });
-      tone(note * 1.5, 0.09, 0.6, { type: 'triangle', gain: 0.06 });
-      tone(note * 2, 0.1, 0.5, { gain: 0.05 });
-      // The core humming as it takes the charge, and a few stray sparks.
-      tone(note / 4, 0.05, 0.5, { type: 'sawtooth', to: (note / 4) * 1.03, gain: 0.035 });
-      for (let i = 0; i < 3; i++) noise(0.1 + i * 0.09 + Math.random() * 0.05, 0.03, { freq: 2500 + Math.random() * 3500, q: 2, gain: 0.12 });
+      const step = Math.round(p * 14);
+      const note = 523 * Math.pow(2, (12 * Math.floor(step / 5) + [0, 2, 4, 7, 9][step % 5]) / 12);
+      tone(note, 0, 0.05, { type: 'square', gain: 0.03 * k });
+      tone(note * 1.5, 0.045, 0.09, { type: 'triangle', gain: 0.06 * k });
+      tone(note * 3, 0.05, 0.06, { gain: 0.015 * k });
+      if (first) tone(160, 0, 0.09, { to: 70, gain: 0.16 });
     },
     // A short circuit: a crackle of sparks over a low electric buzz.
     short() {
