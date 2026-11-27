@@ -26,9 +26,8 @@
 
   --font-display: 'Oxanium', 'Chakra Petch', 'Trebuchet MS', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --scope: #04070a;
-  --steel: rgba(120, 150, 165, 0.55);
-  --steel-dim: rgba(120, 150, 165, 0.09);
+  --scope: #0c272d;
+  --grid-line: rgba(80, 240, 200, 0.1);
   --font-body: 'Exo 2', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif;
 
   color-scheme: dark;
@@ -1206,9 +1205,9 @@ input:focus-visible {
 .tray {
   position: absolute;
   background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 3px),
     var(--scope);
-  box-shadow: inset 0 0 0 1px rgba(120, 150, 165, 0.28), 0 20px 40px -20px #000;
+  box-shadow: inset 0 0 0 1.5px var(--edge-soft), 0 20px 40px -20px #000;
 }
 
 .board:focus-visible .tray {
@@ -1223,7 +1222,7 @@ input:focus-visible {
 
 .chip {
   fill: none;
-  stroke: rgba(120, 150, 165, 0.3);
+  stroke: rgba(80, 240, 200, 0.32);
   stroke-width: 0.025;
   stroke-dasharray: 0.12 0.12;
 }
@@ -1231,13 +1230,13 @@ input:focus-visible {
 /* Each cell is outlined in a hairline, so the grid reads without boxes. */
 .tiles rect {
   fill: none;
-  stroke: var(--steel-dim);
-  stroke-width: 0.015;
+  stroke: var(--grid-line);
+  stroke-width: 0.018;
 }
 
 /* Column and row labels, like a scope's axis readout. */
 .silk text {
-  fill: rgba(140, 165, 178, 0.55);
+  fill: rgba(156, 198, 190, 0.65);
   font: 500 0.24px var(--font-mono);
   text-anchor: middle;
   dominant-baseline: central;
@@ -1245,8 +1244,8 @@ input:focus-visible {
 
 .bus {
   fill: none;
-  stroke: color-mix(in srgb, var(--lab) 26%, transparent);
-  stroke-width: 0.03;
+  stroke: color-mix(in srgb, var(--lab) 32%, transparent);
+  stroke-width: 0.035;
 }
 
 .arrow {

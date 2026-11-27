@@ -2815,13 +2815,14 @@
       ctx.beginPath();
       corners.forEach((c, k) => (k ? ctx.lineTo(c[0], c[1]) : ctx.moveTo(c[0], c[1])));
       ctx.closePath();
-      // A signal-monitor face: near-black, a steel edge, hairline grid.
-      ctx.fillStyle = shade([6, 11, 15], light);
+      // A face in the game's dark teal: a lit edge and a hairline grid.
+      ctx.fillStyle = shade([12, 39, 45], light);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(120, 150, 165, ' + (0.22 + 0.25 * facing).toFixed(2) + ')';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(80, 240, 200, ' + (0.25 + 0.3 * facing).toFixed(2) + ')';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(120, 150, 165, ' + (0.05 + 0.07 * facing).toFixed(2) + ')';
+      ctx.strokeStyle = 'rgba(80, 240, 200, ' + (0.06 + 0.08 * facing).toFixed(2) + ')';
+      ctx.lineWidth = 1;
       ctx.beginPath();
       for (let k = 1; k < n; k++) {
         const a = project(facePoint(f, k, 0));
@@ -2921,7 +2922,7 @@
         const t = project(routePoint(r, s));
         const half = Math.max(2.2, cube.s * 0.14 * t[2]);
         const tail = charged || connecting ? '#ffffff' : rest;
-        ctx.fillStyle = '#05090c';
+        ctx.fillStyle = '#0c272d';
         ctx.fillRect(t[0] - half, t[1] - half, half * 2, half * 2);
         ctx.strokeStyle = tail;
         ctx.lineWidth = Math.max(1, lw * 0.75);
