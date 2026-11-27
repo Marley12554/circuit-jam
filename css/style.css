@@ -1441,6 +1441,71 @@ input:focus-visible {
   fill: #ffffff;
 }
 
+/* Locks and keys: a badge on the tail in the lock's color and shape. A
+   locked trace sits dimmer until its key leaves; a key gently pulses. */
+.arrow .badge .plate {
+  fill: var(--lock);
+}
+
+.arrow .badge .ink {
+  fill: #0c272d;
+}
+
+.arrow .badge .ink-line {
+  fill: none;
+  stroke: #0c272d;
+  stroke-width: 0.045;
+}
+
+.arrow.locked .wire,
+.arrow.locked .tip {
+  opacity: 0.55;
+}
+
+.arrow.locked .pad,
+.arrow.locked .pad-in,
+.arrow.key .pad,
+.arrow.key .pad-in {
+  visibility: hidden;
+}
+
+.arrow.key .badge .plate {
+  animation: key-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes key-pulse {
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.arrow.locked.shorting .badge {
+  animation: lock-shake 0.35s ease-in-out 1;
+}
+
+@keyframes lock-shake {
+  25% {
+    translate: -0.06px 0;
+  }
+  75% {
+    translate: 0.06px 0;
+  }
+}
+
+/* Unlocking: the padlock pops off and fades. */
+.arrow.unlocking .badge {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: unlock-pop 0.42s ease-out forwards;
+}
+
+@keyframes unlock-pop {
+  to {
+    opacity: 0;
+    scale: 1.8;
+  }
+}
+
 /* The trace that got hit flashes white. */
 .arrow.zapped .wire,
 .arrow.zapped .tip,

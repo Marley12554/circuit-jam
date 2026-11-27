@@ -270,7 +270,17 @@
       const j = occ[g.key(lane[k])];
       if (j !== -1) return { free: false, by: j, steps: k, lane: lane.length };
     }
+    // A locked arrow stays put until its key has left, however clear its lane.
+    const key = keyOf(puzzle, i);
+    if (key >= 0 && !(gone && gone[key])) return { free: false, by: key, steps: 0, lane: lane.length, locked: true };
     return { free: true, by: -1, steps: lane.length, lane: lane.length };
+  }
+
+  // The key arrow that unlocks arrow i, or -1 if it isn't locked.
+  function keyOf(puzzle, i) {
+    const a = puzzle.arrows[i];
+    if (a.lock == null || !puzzle.locks || !puzzle.locks[a.lock]) return -1;
+    return puzzle.locks[a.lock].key;
   }
 
   function freeArrows(puzzle, gone) {
@@ -282,7 +292,8 @@
     return out;
   }
 
-  // For each arrow, every other arrow with a cell in its lane.
+  // For each arrow, every other arrow it waits on: those with a cell in
+  // its lane, and its key if it's locked.
   function blockers(puzzle) {
     const g = geometryOf(puzzle);
     const occ = occupancy(puzzle, null);
@@ -292,6 +303,8 @@
         const j = occ[g.key(c)];
         if (j !== -1) set.add(j);
       });
+      const key = keyOf(puzzle, i);
+      if (key >= 0) set.add(key);
       return Array.from(set);
     });
   }
@@ -1215,6 +1228,98 @@
     return Object.assign(shapeOf(board), { arrows: arrows.map((cells) => ({ cells: cells.map(g.cellOf) })), filled });
   }
 
+  /*
+   * Locks (Impossible only, for now): a few lock colors, each with one key
+   * arrow. Clearing the key unlocks every arrow locked in its color. Locks
+   * go on arrows that would be free early, mostly at the edges, so peeling
+   * the board from its edges stops working; keys sit deeper in the board
+   * and away from their locks, so finding them means looking across it.
+   * A lock makes its arrow wait on the key, so a lock is only placed when
+   * the key doesn't already wait, through others, on that arrow: the board
+   * always stays clearable.
+   */
+  function addLocks(spec, board, rng) {
+    const colors = spec.locks || 0;
+    if (!colors || board.arrows.length < 20) return board;
+    const n = board.arrows.length;
+    const waits = blockers(board);
+    // How early each arrow can go (its wave in a clear).
+    const wave = new Int32Array(n).fill(-1);
+    for (let w = 0, left = n; left > 0; w++) {
+      const now = [];
+      for (let i = 0; i < n; i++) if (wave[i] < 0 && waits[i].every((j) => wave[j] >= 0 && wave[j] < w)) now.push(i);
+      if (!now.length) return board;
+      now.forEach((i) => (wave[i] = w));
+      left -= now.length;
+    }
+    let deepest = 0;
+    for (let i = 0; i < n; i++) deepest = Math.max(deepest, wave[i]);
+    const g = geometryOf(board);
+    const spot = (i) => {
+      const c = headOf(board.arrows[i]);
+      return board.kind === 'cube' ? cubeCenter(board.n, c[0], c[1], c[2]) : [c[0], c[1], 0];
+    };
+    const span = board.kind === 'cube' ? board.n : Math.max(board.w, board.h);
+    const seen = new Int32Array(n);
+    let stamp = 0;
+    const reaches = (from, target) => {
+      stamp++;
+      const stack = [from];
+      while (stack.length) {
+        const a = stack.pop();
+        if (a === target) return true;
+        if (seen[a] === stamp) continue;
+        seen[a] = stamp;
+        for (const b of waits[a]) if (seen[b] !== stamp) stack.push(b);
+      }
+      return false;
+    };
+    const perColor = Math.max(3, Math.round(n * 0.025));
+    const used = new Uint8Array(n);
+    const early = shuffle(Array.from({ length: n }, (_, i) => i).filter((i) => wave[i] <= 2), rng);
+    const deep = shuffle(Array.from({ length: n }, (_, i) => i).filter((i) => wave[i] >= Math.max(2, Math.round(deepest * 0.2)) && wave[i] <= Math.round(deepest * 0.75)), rng);
+    const locks = [];
+    // The locks a key could take: far from it, early, and not something
+    // it already waits on.
+    const lockable = (key) => {
+      const kp = spot(key);
+      const far = early
+        .filter((i) => !used[i] && i !== key)
+        .map((i) => ({ i, d: Math.hypot(...spot(i).map((v, t) => v - kp[t])) }))
+        .filter((o) => o.d >= span * 0.25)
+        .sort((a, b) => b.d - a.d);
+      const out = [];
+      for (const o of far) {
+        if (out.length >= perColor) break;
+        if (!reaches(key, o.i)) out.push(o.i);
+      }
+      return out;
+    };
+    for (let k = 0; k < colors; k++) {
+      // Try a dozen keys and keep the one that can lock the most.
+      let best = null;
+      for (const key of deep.filter((i) => !used[i]).slice(0, 12)) {
+        const can = lockable(key);
+        if (!best || can.length > best.can.length) best = { key, can };
+        if (can.length >= perColor) break;
+      }
+      if (!best || !best.can.length) break;
+      used[best.key] = 1;
+      // Commit one at a time: each lock adds a wait, so check again.
+      let placed = 0;
+      for (const i of best.can) {
+        if (reaches(best.key, i)) continue;
+        board.arrows[i].lock = locks.length;
+        waits[i].push(best.key);
+        used[i] = 1;
+        placed++;
+      }
+      if (placed) locks.push({ key: best.key });
+    }
+    if (locks.length) board.locks = locks;
+    return board;
+  }
+
   // The fields that say what shape a board is.
   function shapeOf(p) {
     return p.kind === 'cube' ? { kind: 'cube', n: p.n } : { w: p.w, h: p.h };
@@ -1319,6 +1424,7 @@
       if (board.arrows.length < 2 && spec.kind !== 'cube') board = build(spec, rng);
       if (board.arrows.length < 2) continue;
       board = fillHoles(spec, board, rng);
+      board = addLocks(spec, board, rng);
       const r = rate(board, seed);
       found.push(Object.assign(board, r, { attempt, pace: humanPace(board).perTrace }));
     }
@@ -1332,6 +1438,7 @@
     return Object.assign(shapeOf(chosen), {
       arrows: chosen.arrows,
       fill: chosen.filled / g.count,
+      locks: chosen.locks,
       rating: chosen.rating,
       pace: chosen.pace,
       waves: chosen.waves,
@@ -1510,7 +1617,7 @@
 
 
   function cloneArrows(arrows) {
-    return arrows.map((a) => ({ cells: a.cells.map((c) => c.slice()), color: a.color }));
+    return arrows.map((a) => Object.assign({ cells: a.cells.map((c) => c.slice()), color: a.color }, a.lock == null ? {} : { lock: a.lock }));
   }
 
   function generateLevel(level) {
@@ -1553,6 +1660,7 @@
       bend: CUSTOM.bend[c.bend],
       pick: max ? 1 : 0.6,
       hard: max ? 1 : 0.75,
+      locks: max ? 3 : 0,
       cover: 1.4,
       overclock: !!c.overclock,
       // The same board with or without Overclock.
@@ -1652,6 +1760,7 @@
     starsFor,
     isOverclocked,
     humanPace,
+    keyOf,
     overclockSlack,
     HUMAN,
     overclockFor,

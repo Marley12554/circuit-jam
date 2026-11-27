@@ -35,6 +35,15 @@
     lime: '#9fb872',
     blue: '#7f9cc4',
   };
+  // Lock colors, bright so they stand apart from the muted traces, each
+  // with its own plate shape so they can be matched without color.
+  const LOCKS = [
+    { name: 'red', hex: '#ff5470', plate: 'square' },
+    { name: 'gold', hex: '#ffd23f', plate: 'diamond' },
+    { name: 'white', hex: '#dffcff', plate: 'round' },
+  ];
+  const BADGE_INK = '#0c272d';
+
   // Four hues per set, the set's main color first.
   const SET_PALETTES = [
     ['teal', 'amber', 'blue', 'violet'],
@@ -564,6 +573,37 @@
   let cursorEl = null;
   let cell = 40;
   let hovered = -1;
+
+  // Arrow i's lock color if it's still locked, else -1.
+  function lockOf(i) {
+    const k = game.puzzle.arrows[i].lock;
+    if (k == null || !game.puzzle.locks) return -1;
+    return game.gone[game.puzzle.locks[k].key] ? -1 : k;
+  }
+
+  // The lock color arrow i is the key for, else -1.
+  function keyFor(i) {
+    const locks = game.puzzle.locks || [];
+    for (let k = 0; k < locks.length; k++) if (locks[k].key === i) return k;
+    return -1;
+  }
+
+  // A badge: a plate in the lock's color and shape, with a padlock or a
+  // key on it, centered on 0, 0 in cells.
+  function badgeSvg(k, kind) {
+    const L = LOCKS[k % LOCKS.length];
+    const plate =
+      L.plate === 'square'
+        ? '<rect class="plate" x="-0.23" y="-0.23" width="0.46" height="0.46" rx="0.05"/>'
+        : L.plate === 'diamond'
+          ? '<path class="plate" d="M0 -0.3L0.3 0L0 0.3L-0.3 0Z"/>'
+          : '<circle class="plate" r="0.26"/>';
+    const glyph =
+      kind === 'lock'
+        ? '<rect class="ink" x="-0.1" y="-0.02" width="0.2" height="0.15" rx="0.02"/><path class="ink-line" d="M-0.062 -0.02V-0.075A0.062 0.062 0 0 1 0.062 -0.075V-0.02"/>'
+        : '<circle class="ink-line" cx="-0.075" cy="0" r="0.055"/><path class="ink-line" d="M-0.02 0H0.13M0.085 0V0.06M0.125 0V0.05"/>';
+    return plate + glyph;
+  }
 
   function colorOf(i) {
     const name = game.palette[game.puzzle.arrows[i].color % game.palette.length];
@@ -1175,6 +1215,8 @@
     g.querySelector('.tip').setAttribute('d', shape ? shape.tip : '');
     const pad = g.querySelector('.pad');
     const padIn = g.querySelector('.pad-in');
+    const badge = g.querySelector('.badge');
+    if (badge && shape) badge.setAttribute('transform', 'translate(' + fmt(shape.tail[0]) + ' ' + fmt(shape.tail[1]) + ')');
     if (shape) {
       pad.setAttribute('x', fmt(shape.tail[0] - 0.14));
       pad.setAttribute('y', fmt(shape.tail[1] - 0.14));
@@ -1307,6 +1349,17 @@
       g.appendChild(el('rect', { class: 'pad', width: 0.28, height: 0.28 }));
       g.appendChild(el('rect', { class: 'pad-in', width: 0.1, height: 0.1 }));
       g.appendChild(el('circle', { class: 'spark', r: 0.09 }));
+      // Locks and keys wear a badge on the tail.
+      const lk = lockOf(i);
+      const ky = keyFor(i);
+      if (lk >= 0 || ky >= 0) {
+        const k = lk >= 0 ? lk : ky;
+        const badge = el('g', { class: 'badge' });
+        badge.innerHTML = badgeSvg(k, lk >= 0 ? 'lock' : 'key');
+        g.style.setProperty('--lock', LOCKS[k % LOCKS.length].hex);
+        g.classList.add(lk >= 0 ? 'locked' : 'key');
+        g.appendChild(badge);
+      }
       svg.appendChild(g);
       return g;
     });
@@ -1700,6 +1753,7 @@
     if (!game.puzzle || game.done || i < 0 || game.gone[i] || game.busy.has(i)) return;
     const result = Core.probe(game.puzzle, i, game.gone);
     recTap(i, result.free);
+    const opens = result.free ? keyFor(i) : -1;
     if (game.oc) {
       if (result.free) ocRefill();
       else ocShort();
@@ -1709,6 +1763,7 @@
       else cubeShort(i, result);
     } else if (result.free) leave(i);
     else short(i, result);
+    if (opens >= 0) unlock(opens);
   }
 
   /*
@@ -1833,7 +1888,7 @@
     counter.classList.add('bumped');
     updateHud();
     saveRun();
-    say('Short circuit! The ' + colorOf(result.by).name + ' trace is in the way.', true);
+    say(shortLine(result), true);
     const g = arrowEls[i];
     const reach = result.steps + 0.18;
     const epoch = game.epoch;
@@ -1851,6 +1906,39 @@
     await slide(i, reach, 0, 190 + result.steps * 22, easeOut);
     if (g) g.classList.remove('shorting');
     game.busy.delete(i);
+  }
+
+  function shortLine(result) {
+    if (result.locked) return 'Locked! Clear the ' + LOCKS[Math.max(0, keyFor(result.by)) % LOCKS.length].name + ' key first.';
+    return 'Short circuit! The ' + colorOf(result.by).name + ' trace is in the way.';
+  }
+
+  /*
+   * A key left: every trace locked in its color unlocks at once. On a flat
+   * board their padlocks pop off; on a cube they burst into sparks.
+   */
+  function unlock(k) {
+    const p = game.puzzle;
+    const L = LOCKS[k % LOCKS.length];
+    let count = 0;
+    p.arrows.forEach((a, j) => {
+      if (a.lock !== k || game.gone[j]) return;
+      count++;
+      if (isCube()) {
+        cube.unlocks.push({ i: j, at: performance.now() });
+        return;
+      }
+      const g = arrowEls[j];
+      if (!g) return;
+      g.classList.remove('locked');
+      g.classList.add('unlocking');
+      const badge = g.querySelector('.badge');
+      setTimeout(() => badge && badge.remove(), reduceMotion ? 0 : 420);
+    });
+    if (!count) return;
+    if (isCube()) cubeKick();
+    Sound.unlock();
+    say('The ' + L.name + ' locks are open!');
   }
 
   // ---------- Tapping and pointing ----------
@@ -2517,6 +2605,7 @@
     routes: [],
     anims: new Map(),
     particles: [],
+    unlocks: [],
     zaps: new Map(), // trace -> time it was hit by a short
     spin: { vx: 0, vy: 0 },
     focus: null,
@@ -2585,6 +2674,7 @@
     for (let f = 0; f < 6; f++) if (cube.faceTraces[f].every((i) => game.gone[i])) cube.cleared.add(f);
     cube.zaps.clear();
     cube.particles = [];
+    cube.unlocks = [];
     cube.hover = -1;
     cube.focus = null;
     cube.spin.vx = cube.spin.vy = 0;
@@ -2879,6 +2969,8 @@
         strokeRuns(ctx, runs);
         ctx.globalAlpha = fade;
       }
+      const lk = charged || connecting ? -1 : lockOf(i);
+      if (lk >= 0) ctx.globalAlpha = 0.55 * fade;
       const lit = zapped || charged || cube.hover === i || game.hinted === i;
       ctx.strokeStyle = lit ? mixWhite(color, charged || zapped ? 0.35 : 0.45) : color;
       ctx.lineWidth = lw * (charged ? 1.3 : 1);
@@ -2929,6 +3021,14 @@
         ctx.strokeRect(t[0] - half, t[1] - half, half * 2, half * 2);
         ctx.fillStyle = tail;
         ctx.fillRect(t[0] - half * 0.36, t[1] - half * 0.36, half * 0.72, half * 0.72);
+        ctx.globalAlpha = 1;
+        // Locks and keys wear a badge on the tail.
+        const ky = keyFor(i);
+        if (!charged && !connecting && (lk >= 0 || ky >= 0)) {
+          const pulse = ky >= 0 && lk < 0 ? 0.75 + 0.25 * Math.sin(now / 260) : 1;
+          drawBadge(ctx, t[0], t[1], cube.s * t[2], lk >= 0 ? lk : ky, lk >= 0 ? 'lock' : 'key', pulse);
+          if (ky >= 0 && lk < 0) cubeKick();
+        }
       }
       if (charged) {
         ctx.strokeStyle = '#ffffff';
@@ -2961,6 +3061,51 @@
     drawFinaleFront(now);
     if (game.oc && !game.done) drawCubeCrackle(now);
     cubeDrawMeter(now);
+  }
+
+  // A lock or key badge on the canvas, `unit` pixels to a cell.
+  function drawBadge(ctx, x, y, unit, k, kind, alpha) {
+    const L = LOCKS[k % LOCKS.length];
+    const u = Math.max(7, unit);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(u, u);
+    ctx.globalAlpha = alpha == null ? 1 : alpha;
+    ctx.fillStyle = L.hex;
+    ctx.beginPath();
+    if (L.plate === 'square') ctx.rect(-0.23, -0.23, 0.46, 0.46);
+    else if (L.plate === 'diamond') {
+      ctx.moveTo(0, -0.3);
+      ctx.lineTo(0.3, 0);
+      ctx.lineTo(0, 0.3);
+      ctx.lineTo(-0.3, 0);
+      ctx.closePath();
+    } else ctx.arc(0, 0, 0.26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = BADGE_INK;
+    ctx.strokeStyle = BADGE_INK;
+    ctx.lineWidth = 0.045;
+    ctx.globalAlpha = 1;
+    if (kind === 'lock') {
+      ctx.fillRect(-0.1, -0.02, 0.2, 0.15);
+      ctx.beginPath();
+      ctx.moveTo(-0.062, -0.02);
+      ctx.lineTo(-0.062, -0.075);
+      ctx.arc(0, -0.075, 0.062, Math.PI, 0);
+      ctx.lineTo(0.062, -0.02);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(-0.075, 0, 0.055, 0, Math.PI * 2);
+      ctx.moveTo(-0.02, 0);
+      ctx.lineTo(0.13, 0);
+      ctx.moveTo(0.085, 0);
+      ctx.lineTo(0.085, 0.06);
+      ctx.moveTo(0.125, 0);
+      ctx.lineTo(0.125, 0.05);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function mixWhite(hex, k) {
@@ -3244,6 +3389,17 @@
       active = true;
     }
     cube.zaps.forEach((t, i) => (now - t < 280 ? (active = true) : cube.zaps.delete(i)));
+    // Unlocked padlocks burst into sparks in their lock's color.
+    cube.unlocks.forEach((u) => {
+      const r = cube.routes[u.i];
+      const a = game.puzzle.arrows[u.i];
+      if (r && shown(r.faces[0])) {
+        const q = project(routePoint(r, 0));
+        burst(q[0], q[1], LOCKS[a.lock % LOCKS.length].hex, 12, 0.25);
+      }
+      active = true;
+    });
+    cube.unlocks.length = 0;
     cubeDraw(now);
     if (active) cubeKick();
     else cube.last = 0;
@@ -3279,7 +3435,7 @@
     counter.classList.add('bumped');
     updateHud();
     saveRun();
-    say('Short circuit! The ' + colorOf(result.by).name + ' trace is in the way.', true);
+    say(shortLine(result), true);
     const reach = result.steps + 0.18;
     const slow = reduceMotion ? 0 : 1;
     cube.anims.set(i, { mode: 'short', start: performance.now(), reach, by: result.by, t1: (70 + result.steps * 38) * slow, t2: (190 + result.steps * 22) * slow, s: 0, hit: false, epoch: game.epoch });

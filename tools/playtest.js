@@ -668,6 +668,38 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
     await ctx.close();
   }
 
+  // Locks on Impossible: a locked trace with a clear lane still shorts,
+  // and the drone names the key to clear.
+  {
+    // A fixed Impossible board (no clock) with a locked trace whose lane is clear.
+    const p = await open({ sound: false });
+    await p.goto(url.replace(/index\.html.*$/, 'index.html') + '?code=3040222-1007');
+    await p.waitForSelector('.arrow.locked');
+    check((await p.locator('.arrow.locked').count()) >= 4 && (await p.locator('.arrow.key').count()) >= 2, 'Impossible boards show locks and keys');
+    const tgt = await p.evaluate(() => {
+      const run = JSON.parse(localStorage.getItem('circuit-jam-v1')).run;
+      const lv = run.puzzle;
+      const gone = lv.arrows.map(() => false);
+      const svg = document.querySelector('.arrows').getBoundingClientRect();
+      const cell = svg.width / lv.w;
+      for (let i = 0; i < lv.arrows.length; i++) {
+        const r = window.CircuitJamCore.probe(lv, i, gone);
+        if (!r.locked) continue;
+        for (const c of lv.arrows[i].cells) {
+          if (c[0] < 4 || c[0] > 23 || c[1] < 5 || c[1] > 33) continue;
+          return [svg.left + (c[0] + 0.5) * cell, svg.top + (c[1] + 0.5) * cell];
+        }
+      }
+      return null;
+    });
+    if (tgt) {
+      await p.mouse.click(tgt[0], tgt[1]);
+      await p.waitForTimeout(100);
+      check((await num(p, 'bumpCount')) === 1 && /^Locked! Clear the \w+ key first\.$/.test(await p.textContent('#say')), 'a locked trace shorts and names its key: ' + (await p.textContent('#say')));
+    } else check(false, 'found a locked trace with a clear lane on screen');
+    await p.context().close();
+  }
+
   // Keyboard: arrow keys move a box, Enter taps.
   {
     const p = await open({ sound: false });

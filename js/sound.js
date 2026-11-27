@@ -388,6 +388,15 @@
       tone(f, 0, 0.09, { type: 'triangle', to: f * 1.5, gain: 0.05 + 0.05 * (level || 0) });
       tone(f * 2, 0.04, 0.08, { gain: 0.03 });
     },
+    // A key cleared: its locks spring open with a metallic click and a
+    // bright rising pair of notes.
+    unlock() {
+      noise(0, 0.03, { type: 'highpass', freq: 3000, q: 1, gain: 0.25 });
+      tone(1800, 0, 0.04, { type: 'square', gain: 0.04 });
+      tone(660, 0.05, 0.12, { type: 'triangle', gain: 0.12 });
+      tone(990, 0.13, 0.22, { type: 'triangle', gain: 0.12 });
+      tone(1980, 0.13, 0.18, { gain: 0.03 });
+    },
     // The core running dry: everything winds down.
     powerDown() {
       tone(440, 0, 1.1, { type: 'sawtooth', to: 30, gain: 0.12 });

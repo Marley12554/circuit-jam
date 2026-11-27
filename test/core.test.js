@@ -349,3 +349,28 @@ test('only boards maxed out on every setting get the hardest generator', () => {
   assert.strictEqual(Core.customSpec(Object.assign({}, max, { bend: 1 })).hard, 0.75);
   assert.strictEqual(Core.customSpec(Object.assign({}, max, { shape: 'cube', n: 19 })).pick, 0.6);
 });
+
+test('Impossible boards have locked traces that wait for their keys', () => {
+  for (const shape of ['flat', 'cube']) {
+    const p = Core.generate(Core.customSpec({ shape, w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, seed: 5 }));
+    assert.ok(p.locks && p.locks.length >= 2, shape + ' has lock colors');
+    const locked = p.arrows.map((a, i) => i).filter((i) => p.arrows[i].lock != null);
+    assert.ok(locked.length >= 6, shape + ' has locked traces: ' + locked.length);
+    assert.ok(Core.isClearable(p), shape + ' still clears');
+    // A locked trace with a clear lane is still not free until its key goes.
+    const gone = p.arrows.map(() => false);
+    const occ = Core.occupancy(p, gone);
+    const g = Core.geometryOf(p);
+    const clearLane = locked.find((i) => Core.laneOf(p, i).every((c) => occ[g.key(c)] === -1));
+    if (clearLane != null) {
+      const key = Core.keyOf(p, clearLane);
+      const r = Core.probe(p, clearLane, gone);
+      assert.ok(!r.free && r.locked && r.by === key, shape + ' locked until the key goes');
+      gone[key] = true;
+      assert.ok(Core.probe(p, clearLane, gone).free, shape + ' free once the key is gone');
+    }
+  }
+  // Other boards have none.
+  const plain = Core.generate(Core.customSpec({ shape: 'flat', w: 20, h: 26, density: 2, length: 2, bend: 2, seed: 5 }));
+  assert.ok(!plain.locks, 'no locks below Impossible');
+});
