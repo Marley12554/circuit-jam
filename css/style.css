@@ -1263,8 +1263,14 @@ input:focus-visible {
   stroke-linejoin: miter;
 }
 
-/* At rest: a fine dotted line, dense enough that its shape reads as one
-   continuous trace. */
+/* At rest: a fine dotted line of metal, dense enough that its shape reads
+   as one continuous trace, with a glint sweeping over it. */
+.arrow .wire,
+.arrow .tip,
+.arrow .pad {
+  stroke: var(--metal, var(--c));
+}
+
 .arrow .wire {
   stroke-width: 0.07;
   stroke-linecap: butt;
@@ -1287,10 +1293,10 @@ input:focus-visible {
   stroke: none;
 }
 
-/* A soft glow only when it means something: hover, charging. */
+/* A faint glow at rest, stronger on hover and when charging. */
 .arrow .glow {
-  stroke-width: 0.3;
-  stroke-opacity: 0;
+  stroke-width: 0.24;
+  stroke-opacity: 0.1;
   stroke-linecap: butt;
 }
 
@@ -1340,6 +1346,7 @@ input:focus-visible {
 /* A short: the trace flickers red. */
 .arrow.shorting {
   --c: var(--short);
+  --metal: var(--short);
   animation: flicker 0.4s steps(2, jump-none) 1;
 }
 
@@ -1444,17 +1451,19 @@ input:focus-visible {
 /* Locks and keys: a badge on the tail in the lock's color and shape. A
    locked trace sits dimmer until its key leaves; a key gently pulses. */
 .arrow .badge .plate {
-  fill: var(--lock);
+  fill: var(--scope);
+  stroke: var(--lock);
+  stroke-width: 0.05;
 }
 
 .arrow .badge .ink {
-  fill: #0c272d;
+  fill: var(--lock);
 }
 
 .arrow .badge .ink-line {
   fill: none;
-  stroke: #0c272d;
-  stroke-width: 0.045;
+  stroke: var(--lock);
+  stroke-width: 0.035;
 }
 
 .arrow.locked .wire,

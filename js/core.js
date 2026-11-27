@@ -1025,6 +1025,7 @@
      * simulated player (see humanPace) take longer, which means the next
      * free trace is more often somewhere else on the board.
      */
+    const CHAIN_CAP = 8; // cells: farther hops all count the same
     const spread = spec.spread == null ? (spec.kind === 'cube' ? 0 : 4 * hard) : spec.spread;
     if (spread > 0 && flippable.length) {
       const posOf = (key) => {
@@ -1066,7 +1067,9 @@
           const i = free[bi];
           free[bi] = free[free.length - 1];
           free.pop();
-          total += bd;
+          // A hop to a free trace right beside the last one is what makes a
+          // chain; hops beyond a few cells all count about the same.
+          total += Math.min(bd, CHAIN_CAP);
           at = pos[i][pick[i]];
           for (const j of blocks[i]) if (--waiting[j] === 0) free.push(j);
         }
@@ -1660,11 +1663,12 @@
       bend: CUSTOM.bend[c.bend],
       pick: max ? 1 : 0.6,
       hard: max ? 1 : 0.75,
-      locks: max ? 3 : 0,
+      // Locks are a rule of their own, switched on in Build your own.
+      locks: c.locks ? 3 : 0,
       cover: 1.4,
       overclock: !!c.overclock,
       // The same board with or without Overclock.
-      seed: 'custom:' + codeOf(Object.assign({}, c, { seed: 0, overclock: false })) + ':' + c.seed,
+      seed: 'custom:' + codeOf(Object.assign({}, c, { seed: 0, overclock: false, locks: false })) + ':' + c.seed,
     });
   }
 
@@ -1685,7 +1689,8 @@
    * Overclock is on: 0810121-4821X.
    */
   function codeOf(c) {
-    const tail = '' + c.density + c.length + c.bend + '-' + c.seed + (c.overclock ? 'X' : '');
+    // Rules ride at the end: X for Overclock, L for locks.
+    const tail = '' + c.density + c.length + c.bend + '-' + c.seed + (c.overclock ? 'X' : '') + (c.locks ? 'L' : '');
     if (c.shape === 'cube') return 'C' + String(c.n).padStart(2, '0') + tail;
     return String(c.w).padStart(2, '0') + String(c.h).padStart(2, '0') + tail;
   }
@@ -1693,10 +1698,10 @@
   function parseCode(text) {
     const t = String(text || '').trim().toUpperCase();
     let c = null;
-    let m = /^C\s*(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})(X?)$/.exec(t);
-    if (m) c = { shape: 'cube', n: +m[1], density: +m[2], length: +m[3], bend: +m[4], seed: +m[5], overclock: !!m[6] };
-    m = m ? null : /^(\d{2})(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})(X?)$/.exec(t);
-    if (m) c = { shape: 'flat', w: +m[1], h: +m[2], density: +m[3], length: +m[4], bend: +m[5], seed: +m[6], overclock: !!m[7] };
+    let m = /^C\s*(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})(X?)(L?)$/.exec(t);
+    if (m) c = { shape: 'cube', n: +m[1], density: +m[2], length: +m[3], bend: +m[4], seed: +m[5], overclock: !!m[6], locks: !!m[7] };
+    m = m ? null : /^(\d{2})(\d{2})([0-2])([0-2])([0-2])\s*-?\s*(\d{1,6})(X?)(L?)$/.exec(t);
+    if (m) c = { shape: 'flat', w: +m[1], h: +m[2], density: +m[3], length: +m[4], bend: +m[5], seed: +m[6], overclock: !!m[7], locks: !!m[8] };
     return c && validCustom(c) ? c : null;
   }
 

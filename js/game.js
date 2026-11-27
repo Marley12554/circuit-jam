@@ -26,14 +26,16 @@
   };
   // Traces at rest wear a muted instrument tint of their color; charging,
   // they burn in the bright one.
+  // Metals: teal steel, gold, violet chrome, rose gold, steel blue,
+  // brass, cobalt.
   const TRACE = {
-    teal: '#6fb3a8',
-    amber: '#c4a66e',
-    violet: '#a08cc4',
-    magenta: '#c088b8',
-    cyan: '#7fb3cc',
-    lime: '#9fb872',
-    blue: '#7f9cc4',
+    teal: '#6fd0bf',
+    amber: '#dcb45e',
+    violet: '#ab98e6',
+    magenta: '#df92c4',
+    cyan: '#84c4e6',
+    lime: '#b7cd6a',
+    blue: '#8aa6ea',
   };
   // Lock colors, bright so they stand apart from the muted traces, each
   // with its own plate shape so they can be matched without color.
@@ -115,7 +117,7 @@
     { id: 'genius', name: 'Genius', w: 12, h: 16, n: 12, density: 2, length: 2, bend: 2 },
     // Everything at its hardest: the biggest board, every setting maxed, and
     // Overclock on. The only preset that touches the Overclock switch.
-    { id: 'impossible', name: 'Impossible', w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, overclock: true },
+    { id: 'impossible', name: 'Impossible', w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, overclock: true, locks: true },
   ];
 
   // ---------- Saved progress (this browser only) ----------
@@ -315,6 +317,7 @@
       row.querySelector('[data-step="1"]').disabled = c[key] >= limits[key][1];
     });
     $('ocToggle').checked = !!c.overclock;
+    $('lockToggle').checked = !!c.locks;
     document.querySelectorAll('input[name="shape"]').forEach((r) => {
       r.checked = r.value === c.shape;
       r.closest('label').classList.toggle('on', r.checked);
@@ -335,7 +338,7 @@
   // shape; it matches when the current shape's size and every choice agree.
   function presetMatches(p, c) {
     const size = c.shape === 'cube' ? ['n'] : ['w', 'h'];
-    return size.concat(CHOICE_KEYS).every((k) => p[k] === c[k]) && !!p.overclock === !!c.overclock;
+    return size.concat(CHOICE_KEYS).every((k) => p[k] === c[k]) && !!p.overclock === !!c.overclock && !!p.locks === !!c.locks;
   }
 
   function applyPreset(p) {
@@ -343,6 +346,7 @@
     ['w', 'h', 'n'].concat(CHOICE_KEYS).forEach((k) => (saved.custom[k] = p[k]));
     // Only Impossible runs overclocked; every other preset turns it off.
     saved.custom.overclock = !!p.overclock;
+    saved.custom.locks = !!p.locks;
     save();
     renderCustom();
     flashChanges(before, customSnapshot());
@@ -351,7 +355,7 @@
   // What each setting shows, to light up the ones a preset changed.
   function customSnapshot() {
     const c = saved.custom;
-    return { wOut: c.w, hOut: c.h, nOut: c.n, densityRow: c.density, lengthRow: c.length, bendRow: c.bend, ocToggle: !!c.overclock };
+    return { wOut: c.w, hOut: c.h, nOut: c.n, densityRow: c.density, lengthRow: c.length, bendRow: c.bend, ocToggle: !!c.overclock, lockToggle: !!c.locks };
   }
 
   function flashChanges(before, after) {
@@ -421,7 +425,7 @@
           '<button class="preset impossible" type="button" data-preset="' + p.id + '" aria-pressed="false">' +
           '<svg class="impossible-art" viewBox="0 0 40 40" aria-hidden="true"><path class="ring" d="M20 2 36 11v18L20 38 4 29V11z"/><path class="bolt" d="M23 6 11 22h8l-3 12 13-17h-8z"/></svg>' +
           '<span class="impossible-text"><span class="preset-name">' + p.name + '</span>' +
-          '<span class="preset-icons">' + size + ' · Packed · Long · Twisty · Overclocked</span></span></button>'
+          '<span class="preset-icons">' + size + ' · Packed · Long · Twisty · Overclocked · Locks</span></span></button>'
         );
       }
       const art = cube ? presetCube(p) : flatPreviews[p.id] || (flatPreviews[p.id] = presetBoard(p));
@@ -476,7 +480,7 @@
     clampCustom();
     const c = saved.custom;
     const size = c.shape === 'cube' ? { n: c.n } : { w: c.w, h: c.h };
-    return Object.assign({ shape: c.shape }, size, { density: c.density, length: c.length, bend: c.bend, overclock: !!c.overclock, seed: 1000 + Math.floor(Math.random() * 9000) });
+    return Object.assign({ shape: c.shape }, size, { density: c.density, length: c.length, bend: c.bend, overclock: !!c.overclock, locks: !!c.locks, seed: 1000 + Math.floor(Math.random() * 9000) });
   }
 
   // ---------- Live wires on the wall ----------
@@ -592,17 +596,49 @@
   // key on it, centered on 0, 0 in cells.
   function badgeSvg(k, kind) {
     const L = LOCKS[k % LOCKS.length];
+    // Thin lines in the lock's color, like the traces: an outlined frame
+    // (square, diamond or circle) with a small padlock or key inside.
     const plate =
       L.plate === 'square'
-        ? '<rect class="plate" x="-0.23" y="-0.23" width="0.46" height="0.46" rx="0.05"/>'
+        ? '<rect class="plate" x="-0.2" y="-0.2" width="0.4" height="0.4"/>'
         : L.plate === 'diamond'
-          ? '<path class="plate" d="M0 -0.3L0.3 0L0 0.3L-0.3 0Z"/>'
-          : '<circle class="plate" r="0.26"/>';
+          ? '<path class="plate" d="M0 -0.26L0.26 0L0 0.26L-0.26 0Z"/>'
+          : '<circle class="plate" r="0.22"/>';
     const glyph =
       kind === 'lock'
-        ? '<rect class="ink" x="-0.1" y="-0.02" width="0.2" height="0.15" rx="0.02"/><path class="ink-line" d="M-0.062 -0.02V-0.075A0.062 0.062 0 0 1 0.062 -0.075V-0.02"/>'
-        : '<circle class="ink-line" cx="-0.075" cy="0" r="0.055"/><path class="ink-line" d="M-0.02 0H0.13M0.085 0V0.06M0.125 0V0.05"/>';
+        ? '<rect class="ink" x="-0.075" y="-0.01" width="0.15" height="0.11"/><path class="ink-line" d="M-0.045 -0.01V-0.055A0.045 0.045 0 0 1 0.045 -0.055V-0.01"/>'
+        : '<circle class="ink-line" cx="-0.055" cy="0" r="0.04"/><path class="ink-line" d="M-0.015 0H0.1M0.065 0V0.045M0.095 0V0.035"/>';
     return plate + glyph;
+  }
+
+  /*
+   * Metal: each hue is a gradient with a bright glint band, shared by all
+   * its traces and laid across the whole board, so one slow shimmer sweeps
+   * diagonally over every trace at once, like light catching metal.
+   */
+  function metalDefs(p) {
+    const defs = el('defs');
+    // Two glints cross the board at a time.
+    const span = (p.w + p.h) / 2;
+    game.palette.forEach((name) => {
+      if (defs.querySelector('#metal-' + name)) return;
+      const base = TRACE[name];
+      const g = el('linearGradient', { id: 'metal-' + name, gradientUnits: 'userSpaceOnUse', x1: 0, y1: 0, x2: span, y2: span, spreadMethod: 'repeat' });
+      [
+        [0, base],
+        [0.44, base],
+        [0.48, mixWhite(base, 0.35)],
+        [0.5, mixWhite(base, 0.7)],
+        [0.52, mixWhite(base, 0.35)],
+        [0.56, base],
+        [1, base],
+      ].forEach(([o, c]) => g.appendChild(el('stop', { offset: o, 'stop-color': c })));
+      if (!reduceMotion) {
+        g.appendChild(el('animateTransform', { attributeName: 'gradientTransform', type: 'translate', from: '0 0', to: span + ' ' + span, dur: '6s', repeatCount: 'indefinite' }));
+      }
+      defs.appendChild(g);
+    });
+    return defs;
   }
 
   function colorOf(i) {
@@ -1125,6 +1161,7 @@
   }
 
   const fmt = (n) => Math.round(n * 1000) / 1000;
+  const CONNECT_MS = 200; // energy racing tail to head as a trace launches
   const toPath = (line) => 'M' + line.map((q) => fmt(q[0]) + ' ' + fmt(q[1])).join('L');
 
   // Corners cut on the diagonal, like traces on a real board.
@@ -1228,6 +1265,30 @@
       pad.setAttribute('visibility', 'hidden');
       padIn.setAttribute('visibility', 'hidden');
     }
+    if (g.classList.contains('connecting')) {
+      // Energy racing from the tail to the head over the first moments of
+      // the launch: the line turns solid and lit behind a spark.
+      const f = Math.min(1, (performance.now() - g._connect) / CONNECT_MS);
+      const flow = g.querySelector('.flow');
+      const flowGlow = g.querySelector('.flow-glow');
+      const dash = (f < 0.999 ? f.toFixed(4) : '1') + ' 1';
+      [flow, flowGlow].forEach((p) => {
+        p.setAttribute('d', body);
+        p.setAttribute('pathLength', '1');
+        p.setAttribute('stroke-dasharray', dash);
+      });
+      const spark = g.querySelector('.spark');
+      if (body && flow.getTotalLength) {
+        const q = flow.getPointAtLength(f * flow.getTotalLength());
+        spark.setAttribute('cx', fmt(q.x));
+        spark.setAttribute('cy', fmt(q.y));
+      }
+      if (f >= 1) {
+        g.classList.remove('connecting');
+        g.classList.add('energized', 'connected');
+        [flow, flowGlow].forEach((p) => p.setAttribute('d', ''));
+      }
+    }
     if (!g.classList.contains('energized')) return;
     // A charged trace crackles with lightning along its body. Nothing
     // trails behind its tail: it ends cleanly at the pad.
@@ -1319,6 +1380,7 @@
     tray = document.createElement('div');
     tray.className = 'tray';
     svg = el('svg', { class: 'arrows', viewBox: '0 0 ' + p.w + ' ' + p.h, 'aria-hidden': 'true' });
+    svg.appendChild(metalDefs(p));
     // The chip: a framed grid of cell tiles, labeled like a circuit board
     // (columns A, B, C..., rows 1, 2, 3...), and the bus around the rim.
     svg.appendChild(el('rect', { class: 'bus', x: -RIM, y: -RIM, width: p.w + 2 * RIM, height: p.h + 2 * RIM }));
@@ -1344,6 +1406,7 @@
       const g = el('g', { class: 'arrow' });
       g.style.setProperty('--trace', colorOf(i).hex);
       g.style.setProperty('--hot', colorOf(i).bright);
+      g.style.setProperty('--metal', 'url(#metal-' + colorOf(i).name + ')');
       ['halo', 'glow', 'wire', 'flow-glow', 'flow', 'tip', 'bolt', 'bolt2'].forEach((c) => g.appendChild(el('path', { class: c })));
       // The tail: a square terminal with a lit core.
       g.appendChild(el('rect', { class: 'pad', width: 0.28, height: 0.28 }));
@@ -1418,11 +1481,18 @@
     if (isCube()) return cubeLayout();
     if (!game.puzzle || !svg) return;
     const p = game.puzzle;
-    const W = board.clientWidth;
+    let W = board.clientWidth;
     const H = board.clientHeight;
     const side = RIM + 0.45;
     const topPad = RIM + CORE_R * 1.32 + 0.35;
-    cell = Math.max(8, Math.min(60, W / (p.w + side * 2), H / (p.h + side + topPad)));
+    const fit = (w) => Math.max(8, Math.min(60, w / (p.w + side * 2), H / (p.h + side + topPad)));
+    cell = fit(W);
+    // Boards big enough to zoom show the zoom buttons at the right edge:
+    // keep a gutter for them so no cell ever sits underneath.
+    if (46 / cell >= 1.2) {
+      W -= ZOOM_GUTTER;
+      cell = fit(W);
+    }
     const tw = (p.w + side * 2) * cell;
     const th = (p.h + side + topPad) * cell;
     const left = (W - tw) / 2;
@@ -1656,7 +1726,8 @@
   // zoomed past the screen.
   function applyView() {
     if (!stage || !view.box) return;
-    const W = board.clientWidth;
+    // Leave the zoom buttons' gutter clear, at rest and when panning.
+    const W = board.clientWidth - (zoomTools && !zoomTools.hidden ? ZOOM_GUTTER : 0);
     const H = board.clientHeight;
     view.z = Math.min(view.maxZ, Math.max(1, view.z));
     const place = (size, start, len, pos) => {
@@ -1788,14 +1859,15 @@
     if (g) svg.insertBefore(g, core.g); // charged traces run on top
     const dist = track.total + TRAIL;
     const ms = 300 + dist * 36;
-    // First the energy connects the trace from tail to head, then it goes.
-    const connectMs = reduceMotion || !g ? 0 : Math.min(460, 150 + track.len * 38);
-    Sound.charge((connectMs + ms * launchTime(track.total / dist)) / 1000, game.absorbed / total);
-    if (connectMs) {
-      const done = await connect(i, connectMs);
-      if (!done) return;
+    Sound.charge((ms * launchTime(track.total / dist)) / 1000, game.absorbed / total);
+    // It goes at once; the energy races from tail to head as it pulls away.
+    if (g) {
+      if (reduceMotion) g.classList.add('energized');
+      else {
+        g._connect = performance.now();
+        g.classList.add('connecting');
+      }
     }
-    if (g) g.classList.add('energized');
     let feeding = false;
     let inside = false;
     const ok = await slide(i, 0, dist, ms, launch, (at) => {
@@ -1812,49 +1884,6 @@
     if (!ok) return;
     if (g) g.remove();
     arrowEls[i] = null;
-  }
-
-  /*
-   * Energy connecting a trace: a bright front runs from the tail terminal
-   * along the dotted line to the head, turning it solid and lit as it
-   * goes, with a spark riding the front. Then the head flashes and the
-   * trace launches. Resolves false if the board changed meanwhile.
-   */
-  function connect(i, ms) {
-    const g = arrowEls[i];
-    const epoch = game.epoch;
-    const flow = g.querySelector('.flow');
-    const flowGlow = g.querySelector('.flow-glow');
-    const spark = g.querySelector('.spark');
-    const d = g.querySelector('.wire').getAttribute('d');
-    [flow, flowGlow].forEach((p) => {
-      p.setAttribute('d', d);
-      p.setAttribute('pathLength', '1');
-    });
-    const total = flow.getTotalLength ? flow.getTotalLength() : 0;
-    g.classList.add('connecting');
-    const start = performance.now();
-    return new Promise((resolve) => {
-      const step = (now) => {
-        if (epoch !== game.epoch || !g.isConnected) return resolve(false);
-        const t = Math.min(1, (now - start) / ms);
-        const f = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-        const dash = f.toFixed(4) + ' 1';
-        flow.setAttribute('stroke-dasharray', dash);
-        flowGlow.setAttribute('stroke-dasharray', dash);
-        if (total) {
-          const q = flow.getPointAtLength(f * total);
-          spark.setAttribute('cx', fmt(q.x));
-          spark.setAttribute('cy', fmt(q.y));
-        }
-        if (t < 1) return requestAnimationFrame(step);
-        g.classList.remove('connecting');
-        g.classList.add('connected');
-        [flow, flowGlow].forEach((p) => p.setAttribute('d', ''));
-        resolve(true);
-      };
-      requestAnimationFrame(step);
-    });
   }
 
   // The core glows white while a trace is pouring into it.
@@ -2442,6 +2471,11 @@
       save();
       renderCustom();
     });
+    $('lockToggle').addEventListener('change', (e) => {
+      saved.custom.locks = e.target.checked;
+      save();
+      renderCustom();
+    });
     $('vibrateToggle').addEventListener('change', (e) => setVibrate(e.target.checked));
     $('vibrateToggle').closest('label').hidden = !canVibrate;
     $('vibrateToggle').checked = saved.vibrate !== false;
@@ -2681,6 +2715,9 @@
     cubeLayout();
   }
 
+  // Room kept beside the board for the zoom buttons.
+  const ZOOM_GUTTER = 54;
+
   function cubeLayout() {
     if (!cube.canvas) return;
     const W = board.clientWidth;
@@ -2693,9 +2730,11 @@
     cube.canvas.height = Math.round(H * dpr);
     const meter = 44;
     const n = game.puzzle.n;
-    const L = Math.min(W, H - meter);
+    // The zoom buttons sit at the right edge: center the cube in the rest.
+    const room = W - ZOOM_GUTTER;
+    const L = Math.min(room, H - meter);
     const s = L / (n * 1.85);
-    cube.base = { s, cx: W / 2, cy: meter + (H - meter) / 2 };
+    cube.base = { s, cx: room / 2, cy: meter + (H - meter) / 2 };
     // The meter sits just above the whole cube however it is turned
     // (and at the very top once you zoom in).
     cube.baseMeterY = Math.max(24, cube.base.cy - n * 0.87 * s * 1.18 - 20);
@@ -2942,13 +2981,25 @@
       const r = cube.routes[i];
       const anim = cube.anims.get(i);
       const s = anim ? anim.s : 0;
-      const charged = anim && anim.mode === 'leave';
-      const connecting = anim && anim.mode === 'connect';
+      // Launching: lit from tail to head over its first moments, then charged.
+      const connecting = anim && anim.mode === 'leave' && anim.lit < 1;
+      const charged = anim && anim.mode === 'leave' && !connecting;
       const shorting = anim && anim.mode === 'short' && anim.hit;
       const zapped = cube.zaps.has(i) && now - cube.zaps.get(i) < 260;
       const bright = colorOf(i).bright;
-      const color = shorting ? '#ff5d73' : charged ? bright : colorOf(i).hex;
+      let color = shorting ? '#ff5d73' : charged ? bright : colorOf(i).hex;
       const end = s + r.len - 1;
+      // Metal: a glint band sweeps diagonally across the cube, catching
+      // each trace as it passes.
+      if (!shorting && !charged && !reduceMotion) {
+        const hp = project(routePoint(r, Math.min(end, r.total)));
+        // Two bands crossing at a time, like the flat board.
+        const span = (cube.W + cube.H) / 2;
+        const pos = (hp[0] + hp[1]) / span - (now / 6000);
+        const off = Math.abs(pos - Math.round(pos)) * span;
+        const glint = Math.max(0, 1 - off / (cube.s * 4 + 40));
+        if (glint > 0) color = mixWhite(color, 0.55 * glint);
+      }
       const fade = charged && s > r.edgeAt ? Math.max(0, 1 - (s - r.edgeAt) / (r.len + 3)) : 1;
       ctx.globalAlpha = fade;
       ctx.lineCap = 'butt';
@@ -2989,9 +3040,9 @@
       const rest = ctx.strokeStyle;
       // Connecting: a bright solid front runs from the tail to the head,
       // with a spark riding it.
-      if (connecting && anim.f > 0) {
-        const reach = anim.f * (r.len - 1 + 0.3);
-        const front = bend(routeRuns(r, 0, Math.max(0.01, reach)));
+      if (connecting && anim.lit > 0) {
+        const reach = anim.lit * (r.len - 1 + 0.3);
+        const front = bend(routeRuns(r, s, s + Math.max(0.01, reach)));
         ctx.strokeStyle = bright;
         ctx.globalAlpha = 0.28;
         ctx.lineWidth = lw * 4.5;
@@ -2999,7 +3050,7 @@
         ctx.globalAlpha = 1;
         ctx.lineWidth = lw * 1.3;
         strokeRuns(ctx, front);
-        const at = Math.min(reach, r.len - 1);
+        const at = s + Math.min(reach, r.len - 1);
         if (shown(r.faces[segmentAt(r, at)])) {
           const q = project(routePoint(r, at));
           ctx.fillStyle = '#ffffff';
@@ -3071,38 +3122,40 @@
     ctx.translate(x, y);
     ctx.scale(u, u);
     ctx.globalAlpha = alpha == null ? 1 : alpha;
-    ctx.fillStyle = L.hex;
-    ctx.beginPath();
-    if (L.plate === 'square') ctx.rect(-0.23, -0.23, 0.46, 0.46);
-    else if (L.plate === 'diamond') {
-      ctx.moveTo(0, -0.3);
-      ctx.lineTo(0.3, 0);
-      ctx.lineTo(0, 0.3);
-      ctx.lineTo(-0.3, 0);
-      ctx.closePath();
-    } else ctx.arc(0, 0, 0.26, 0, Math.PI * 2);
-    ctx.fill();
+    // Thin lines in the lock's color, like the traces.
     ctx.fillStyle = BADGE_INK;
-    ctx.strokeStyle = BADGE_INK;
-    ctx.lineWidth = 0.045;
-    ctx.globalAlpha = 1;
+    ctx.strokeStyle = L.hex;
+    ctx.lineWidth = 0.05;
+    ctx.beginPath();
+    if (L.plate === 'square') ctx.rect(-0.2, -0.2, 0.4, 0.4);
+    else if (L.plate === 'diamond') {
+      ctx.moveTo(0, -0.26);
+      ctx.lineTo(0.26, 0);
+      ctx.lineTo(0, 0.26);
+      ctx.lineTo(-0.26, 0);
+      ctx.closePath();
+    } else ctx.arc(0, 0, 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = L.hex;
+    ctx.lineWidth = 0.035;
     if (kind === 'lock') {
-      ctx.fillRect(-0.1, -0.02, 0.2, 0.15);
+      ctx.fillRect(-0.075, -0.01, 0.15, 0.11);
       ctx.beginPath();
-      ctx.moveTo(-0.062, -0.02);
-      ctx.lineTo(-0.062, -0.075);
-      ctx.arc(0, -0.075, 0.062, Math.PI, 0);
-      ctx.lineTo(0.062, -0.02);
+      ctx.moveTo(-0.045, -0.01);
+      ctx.lineTo(-0.045, -0.055);
+      ctx.arc(0, -0.055, 0.045, Math.PI, 0);
+      ctx.lineTo(0.045, -0.01);
       ctx.stroke();
     } else {
       ctx.beginPath();
-      ctx.arc(-0.075, 0, 0.055, 0, Math.PI * 2);
-      ctx.moveTo(-0.02, 0);
-      ctx.lineTo(0.13, 0);
-      ctx.moveTo(0.085, 0);
-      ctx.lineTo(0.085, 0.06);
-      ctx.moveTo(0.125, 0);
-      ctx.lineTo(0.125, 0.05);
+      ctx.arc(-0.055, 0, 0.04, 0, Math.PI * 2);
+      ctx.moveTo(-0.015, 0);
+      ctx.lineTo(0.1, 0);
+      ctx.moveTo(0.065, 0);
+      ctx.lineTo(0.065, 0.045);
+      ctx.moveTo(0.095, 0);
+      ctx.lineTo(0.095, 0.035);
       ctx.stroke();
     }
     ctx.restore();
@@ -3328,11 +3381,8 @@
       }
       active = true;
       const t = anim.ms > 0 ? (now - anim.start) / anim.ms : 1;
-      if (anim.mode === 'connect') {
-        const ct = Math.min(1, t);
-        anim.f = ct < 0.5 ? 2 * ct * ct : 1 - Math.pow(-2 * ct + 2, 2) / 2;
-        if (ct >= 1) cube.anims.set(i, Object.assign(anim.next, { start: now }));
-      } else if (anim.mode === 'leave') {
+      if (anim.mode === 'leave') {
+        anim.lit = Math.min(1, (now - anim.start) / CONNECT_MS);
         anim.s = anim.stop * launch(Math.min(1, t));
         const r = cube.routes[i];
         if (!anim.counted && anim.s >= r.edgeAt) {
@@ -3402,7 +3452,16 @@
     cube.unlocks.length = 0;
     cubeDraw(now);
     if (active) cubeKick();
-    else cube.last = 0;
+    else {
+      cube.last = 0;
+      // The metal glint keeps sweeping at a gentle 12 frames a second.
+      if (!reduceMotion && !cube.idleTimer) {
+        cube.idleTimer = setTimeout(() => {
+          cube.idleTimer = 0;
+          cubeKick();
+        }, 80);
+      }
+    }
   }
 
   function cubeLeave(i) {
@@ -3418,11 +3477,9 @@
     const r = cube.routes[i];
     const stop = r.edgeAt + r.len + 3;
     const ms = reduceMotion ? 0 : 300 + stop * 36;
-    // First the energy connects the trace from tail to head, then it goes.
-    const connectMs = reduceMotion ? 0 : Math.min(460, 150 + r.len * 38);
-    Sound.charge((connectMs + (ms || 300) * launchTime(r.edgeAt / stop)) / 1000, game.absorbed / total);
-    const go = { mode: 'leave', start: performance.now(), ms, stop, s: 0, counted: false, epoch: game.epoch };
-    cube.anims.set(i, connectMs ? { mode: 'connect', start: performance.now(), ms: connectMs, f: 0, s: 0, epoch: game.epoch, next: go } : go);
+    Sound.charge(((ms || 300) * launchTime(r.edgeAt / stop)) / 1000, game.absorbed / total);
+    // It goes at once; the energy races from tail to head as it pulls away.
+    cube.anims.set(i, { mode: 'leave', start: performance.now(), ms, stop, s: 0, counted: false, epoch: game.epoch, lit: reduceMotion ? 1 : 0 });
     cubeKick();
   }
 
@@ -4210,7 +4267,8 @@
     const c = game.custom;
     const spec = Core.customSpec(c);
     const name = spec.hard === 1 ? 'an Impossible ' + (c.shape === 'cube' ? 'cube' : 'board') : c.shape === 'cube' ? 'a ' + c.n + '×' + c.n + '×' + c.n + ' cube' : 'a ' + c.w + '×' + c.h + ' board';
-    return { name: name + (c.overclock ? ' (overclocked)' : ''), link: shareBase() + '?code=' + encodeURIComponent(Core.codeOf(c)) };
+    const rules = [c.overclock && 'overclocked', c.locks && 'with locks'].filter(Boolean).join(', ');
+    return { name: name + (rules ? ' (' + rules + ')' : ''), link: shareBase() + '?code=' + encodeURIComponent(Core.codeOf(c)) };
   }
 
   function shareText() {

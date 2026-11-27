@@ -156,7 +156,7 @@ test('denser settings fill more of the board', () => {
 });
 
 test('share codes round-trip and reject bad input', () => {
-  const c = { shape: 'flat', w: 8, h: 10, density: 1, length: 2, bend: 1, seed: 4821, overclock: false };
+  const c = { shape: 'flat', w: 8, h: 10, density: 1, length: 2, bend: 1, seed: 4821, overclock: false, locks: false };
   const code = Core.codeOf(c);
   assert.strictEqual(code, '0810121-4821');
   assert.deepStrictEqual(Core.parseCode(code), c);
@@ -177,7 +177,7 @@ test('share codes round-trip and reject bad input', () => {
   assert.deepStrictEqual(Core.generate(Core.customSpec(oc)).arrows, Core.generate(Core.customSpec(c)).arrows);
   assert.strictEqual(Core.parseCode('c06211-77x').overclock, true);
   // Cube codes start with C.
-  const cube = { shape: 'cube', n: 6, density: 2, length: 1, bend: 1, seed: 77, overclock: false };
+  const cube = { shape: 'cube', n: 6, density: 2, length: 1, bend: 1, seed: 77, overclock: false, locks: false };
   assert.strictEqual(Core.codeOf(cube), 'C06211-77');
   assert.deepStrictEqual(Core.parseCode('c06211-77'), cube);
   assert.strictEqual(Core.parseCode('C21211-77'), null); // face too big
@@ -350,9 +350,9 @@ test('only boards maxed out on every setting get the hardest generator', () => {
   assert.strictEqual(Core.customSpec(Object.assign({}, max, { shape: 'cube', n: 19 })).pick, 0.6);
 });
 
-test('Impossible boards have locked traces that wait for their keys', () => {
+test('boards with the Locks rule have locked traces that wait for their keys', () => {
   for (const shape of ['flat', 'cube']) {
-    const p = Core.generate(Core.customSpec({ shape, w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, seed: 5 }));
+    const p = Core.generate(Core.customSpec({ shape, w: 30, h: 40, n: 20, density: 2, length: 2, bend: 2, seed: 5, locks: true }));
     assert.ok(p.locks && p.locks.length >= 2, shape + ' has lock colors');
     const locked = p.arrows.map((a, i) => i).filter((i) => p.arrows[i].lock != null);
     assert.ok(locked.length >= 6, shape + ' has locked traces: ' + locked.length);
@@ -370,7 +370,11 @@ test('Impossible boards have locked traces that wait for their keys', () => {
       assert.ok(Core.probe(p, clearLane, gone).free, shape + ' free once the key is gone');
     }
   }
-  // Other boards have none.
-  const plain = Core.generate(Core.customSpec({ shape: 'flat', w: 20, h: 26, density: 2, length: 2, bend: 2, seed: 5 }));
-  assert.ok(!plain.locks, 'no locks below Impossible');
+  // Without the rule there are none, even at the biggest settings.
+  const plain = Core.generate(Core.customSpec({ shape: 'flat', w: 30, h: 40, density: 2, length: 2, bend: 2, seed: 5 }));
+  assert.ok(!plain.locks, 'no locks without the rule');
+  // The rule rides in the code.
+  const c = Core.parseCode('3040222-55XL');
+  assert.ok(c.locks && c.overclock && Core.codeOf(c) === '3040222-55XL');
+  assert.ok(Core.parseCode('3040222-55L').locks && !Core.parseCode('3040222-55L').overclock);
 });

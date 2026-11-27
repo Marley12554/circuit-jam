@@ -673,7 +673,7 @@ const url = process.argv[2] || 'http://localhost:8765/index.html';
   {
     // A fixed Impossible board (no clock) with a locked trace whose lane is clear.
     const p = await open({ sound: false });
-    await p.goto(url.replace(/index\.html.*$/, 'index.html') + '?code=3040222-1007');
+    await p.goto(url.replace(/index\.html.*$/, 'index.html') + '?code=3040222-1007L');
     await p.waitForSelector('.arrow.locked');
     check((await p.locator('.arrow.locked').count()) >= 4 && (await p.locator('.arrow.key').count()) >= 2, 'Impossible boards show locks and keys');
     const tgt = await p.evaluate(() => {
