@@ -26,16 +26,14 @@
   };
   // Traces at rest wear a muted instrument tint of their color; charging,
   // they burn in the bright one.
-  // Metals: teal steel, gold, violet chrome, rose gold, steel blue,
-  // brass, cobalt.
   const TRACE = {
-    teal: '#6fd0bf',
-    amber: '#dcb45e',
-    violet: '#ab98e6',
-    magenta: '#df92c4',
-    cyan: '#84c4e6',
-    lime: '#b7cd6a',
-    blue: '#8aa6ea',
+    teal: '#6fb3a8',
+    amber: '#c4a66e',
+    violet: '#a08cc4',
+    magenta: '#c088b8',
+    cyan: '#7fb3cc',
+    lime: '#9fb872',
+    blue: '#7f9cc4',
   };
   // Lock colors, bright so they stand apart from the muted traces, each
   // with its own plate shape so they can be matched without color.
@@ -609,36 +607,6 @@
         ? '<rect class="ink" x="-0.075" y="-0.01" width="0.15" height="0.11"/><path class="ink-line" d="M-0.045 -0.01V-0.055A0.045 0.045 0 0 1 0.045 -0.055V-0.01"/>'
         : '<circle class="ink-line" cx="-0.055" cy="0" r="0.04"/><path class="ink-line" d="M-0.015 0H0.1M0.065 0V0.045M0.095 0V0.035"/>';
     return plate + glyph;
-  }
-
-  /*
-   * Metal: each hue is a gradient with a bright glint band, shared by all
-   * its traces and laid across the whole board, so one slow shimmer sweeps
-   * diagonally over every trace at once, like light catching metal.
-   */
-  function metalDefs(p) {
-    const defs = el('defs');
-    // Two glints cross the board at a time.
-    const span = (p.w + p.h) / 2;
-    game.palette.forEach((name) => {
-      if (defs.querySelector('#metal-' + name)) return;
-      const base = TRACE[name];
-      const g = el('linearGradient', { id: 'metal-' + name, gradientUnits: 'userSpaceOnUse', x1: 0, y1: 0, x2: span, y2: span, spreadMethod: 'repeat' });
-      [
-        [0, base],
-        [0.44, base],
-        [0.48, mixWhite(base, 0.35)],
-        [0.5, mixWhite(base, 0.7)],
-        [0.52, mixWhite(base, 0.35)],
-        [0.56, base],
-        [1, base],
-      ].forEach(([o, c]) => g.appendChild(el('stop', { offset: o, 'stop-color': c })));
-      if (!reduceMotion) {
-        g.appendChild(el('animateTransform', { attributeName: 'gradientTransform', type: 'translate', from: '0 0', to: span + ' ' + span, dur: '6s', repeatCount: 'indefinite' }));
-      }
-      defs.appendChild(g);
-    });
-    return defs;
   }
 
   function colorOf(i) {
@@ -1380,7 +1348,6 @@
     tray = document.createElement('div');
     tray.className = 'tray';
     svg = el('svg', { class: 'arrows', viewBox: '0 0 ' + p.w + ' ' + p.h, 'aria-hidden': 'true' });
-    svg.appendChild(metalDefs(p));
     // The chip: a framed grid of cell tiles, labeled like a circuit board
     // (columns A, B, C..., rows 1, 2, 3...), and the bus around the rim.
     svg.appendChild(el('rect', { class: 'bus', x: -RIM, y: -RIM, width: p.w + 2 * RIM, height: p.h + 2 * RIM }));
@@ -1406,7 +1373,6 @@
       const g = el('g', { class: 'arrow' });
       g.style.setProperty('--trace', colorOf(i).hex);
       g.style.setProperty('--hot', colorOf(i).bright);
-      g.style.setProperty('--metal', 'url(#metal-' + colorOf(i).name + ')');
       ['halo', 'glow', 'wire', 'flow-glow', 'flow', 'tip', 'bolt', 'bolt2'].forEach((c) => g.appendChild(el('path', { class: c })));
       // The tail: a square terminal with a lit core.
       g.appendChild(el('rect', { class: 'pad', width: 0.28, height: 0.28 }));
@@ -2987,19 +2953,8 @@
       const shorting = anim && anim.mode === 'short' && anim.hit;
       const zapped = cube.zaps.has(i) && now - cube.zaps.get(i) < 260;
       const bright = colorOf(i).bright;
-      let color = shorting ? '#ff5d73' : charged ? bright : colorOf(i).hex;
+      const color = shorting ? '#ff5d73' : charged ? bright : colorOf(i).hex;
       const end = s + r.len - 1;
-      // Metal: a glint band sweeps diagonally across the cube, catching
-      // each trace as it passes.
-      if (!shorting && !charged && !reduceMotion) {
-        const hp = project(routePoint(r, Math.min(end, r.total)));
-        // Two bands crossing at a time, like the flat board.
-        const span = (cube.W + cube.H) / 2;
-        const pos = (hp[0] + hp[1]) / span - (now / 6000);
-        const off = Math.abs(pos - Math.round(pos)) * span;
-        const glint = Math.max(0, 1 - off / (cube.s * 4 + 40));
-        if (glint > 0) color = mixWhite(color, 0.55 * glint);
-      }
       const fade = charged && s > r.edgeAt ? Math.max(0, 1 - (s - r.edgeAt) / (r.len + 3)) : 1;
       ctx.globalAlpha = fade;
       ctx.lineCap = 'butt';
@@ -3452,16 +3407,7 @@
     cube.unlocks.length = 0;
     cubeDraw(now);
     if (active) cubeKick();
-    else {
-      cube.last = 0;
-      // The metal glint keeps sweeping at a gentle 12 frames a second.
-      if (!reduceMotion && !cube.idleTimer) {
-        cube.idleTimer = setTimeout(() => {
-          cube.idleTimer = 0;
-          cubeKick();
-        }, 80);
-      }
-    }
+    else cube.last = 0;
   }
 
   function cubeLeave(i) {

@@ -1263,14 +1263,8 @@ input:focus-visible {
   stroke-linejoin: miter;
 }
 
-/* At rest: a fine dotted line of metal, dense enough that its shape reads
-   as one continuous trace, with a glint sweeping over it. */
-.arrow .wire,
-.arrow .tip,
-.arrow .pad {
-  stroke: var(--metal, var(--c));
-}
-
+/* At rest: a fine dotted line, dense enough that its shape reads as one
+   continuous trace. */
 .arrow .wire {
   stroke-width: 0.07;
   stroke-linecap: butt;
@@ -1293,10 +1287,10 @@ input:focus-visible {
   stroke: none;
 }
 
-/* A faint glow at rest, stronger on hover and when charging. */
+/* A soft glow only when it means something: hover, charging. */
 .arrow .glow {
-  stroke-width: 0.24;
-  stroke-opacity: 0.1;
+  stroke-width: 0.3;
+  stroke-opacity: 0;
   stroke-linecap: butt;
 }
 
@@ -1346,7 +1340,6 @@ input:focus-visible {
 /* A short: the trace flickers red. */
 .arrow.shorting {
   --c: var(--short);
-  --metal: var(--short);
   animation: flicker 0.4s steps(2, jump-none) 1;
 }
 
